@@ -22,6 +22,7 @@ GET /api/vehicles/{plate}/route.
 """
 
 import argparse
+import base64
 import math
 import os
 import random
@@ -47,6 +48,13 @@ PLATE_LETTERS = "ABCDEFGHJKLMNPRSTUVWXYZ"
 SPEED_BAND_KMH = (35.0, 60.0)
 MIN_LEG_SECONDS = 20.0
 _EARTH_RADIUS_KM = 6371.0088
+# One decoy every run reads GJ01AB1Z39 — its ONLY watchlist match is the
+# seeded GJ01AB1Z34 entry (fuzzy, distance 1.0, confidence 0.72), so that
+# entry demonstrably fires; it is >1 edit from the demo plate, so it never
+# pollutes the target route.
+BAIT_TRIGGER_PLATE = "GJ01AB1Z39"
+# --inject-teleport: minimum distance of the "impossible" camera from the route.
+TELEPORT_MIN_KM = 150.0
 
 
 def iso_z(dt: datetime) -> str:
@@ -69,6 +77,52 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlambda = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
+
+
+def plate_snapshot_b64(raw_plate: str, captured_at_iso: str, camera_name: str) -> str | None:
+    """Small synthetic plate-crop JPEG (~5-10 KB): dark vehicle rectangle with
+    a white Indian-style plate carrying the RAW read, plus a camera/timestamp
+    strip — clearly synthetic, but it populates alert cards, route evidence
+    cards, and dossier Appendix A exactly like a real ANPR crop would
+    (detectors/anpr.py attaches real vehicle crops the same way).
+
+    Returns None if OpenCV/numpy are unavailable (simulator still works).
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return None
+
+    width, height = 288, 132
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    img[:] = (34, 30, 26)  # dark vehicle body (BGR)
+    # Subtle body shading + a bumper line so it reads as a vehicle rear.
+    cv2.rectangle(img, (0, 0), (width, 34), (52, 46, 40), -1)
+    cv2.line(img, (0, 96), (width, 96), (20, 18, 16), 3)
+    # White plate with a black border, centered.
+    px1, py1, px2, py2 = 34, 44, width - 34, 88
+    cv2.rectangle(img, (px1, py1), (px2, py2), (235, 238, 240), -1)
+    cv2.rectangle(img, (px1, py1), (px2, py2), (10, 10, 10), 2)
+    # Raw plate read, fitted to the plate box.
+    text = raw_plate.upper()
+    scale, thickness = 0.9, 2
+    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+    if tw > (px2 - px1 - 12):
+        scale *= (px2 - px1 - 12) / float(tw)
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+    tx = px1 + ((px2 - px1) - tw) // 2
+    ty = py1 + ((py2 - py1) + th) // 2
+    cv2.putText(img, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, scale, (15, 15, 15), thickness, cv2.LINE_AA)
+    # Camera + UTC timestamp strip (like a CCTV overlay), bottom-left.
+    stamp = f"{camera_name[:24]}  {captured_at_iso[:19]}Z"
+    cv2.putText(img, stamp, (6, height - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (140, 200, 235), 1, cv2.LINE_AA)
+    cv2.putText(img, "SIMULATED FEED", (6, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (90, 90, 200), 1, cv2.LINE_AA)
+
+    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+    if not ok:
+        return None
+    return base64.b64encode(buf.tobytes()).decode("ascii")
 
 
 def levenshtein(a: str, b: str) -> int:
@@ -187,46 +241,69 @@ def build_detections(route, decoy_cameras, args, rng: random.Random):
     offsets = [0.0]
     for leg in leg_seconds:
         offsets.append(offsets[-1] + leg)
+    def payload_for(camera, plate, captured_at, conf_lo, conf_hi):
+        captured_iso = iso_z(captured_at)
+        return {
+            "camera_id": camera["id"],
+            "object_type": "vehicle",
+            "plate": plate,
+            "plate_confidence": round(rng.uniform(conf_lo, conf_hi), 2),
+            "captured_at": captured_iso,
+            "snapshot_b64": plate_snapshot_b64(
+                plate, captured_iso, camera.get("name") or f"camera {camera['id']}"
+            ),
+            "detector": "simulator",
+        }
+
     for camera, offset in zip(route, offsets):
         captured_at = start + timedelta(seconds=offset)
-        detections.append(
-            (
-                {
-                    "camera_id": camera["id"],
-                    "object_type": "vehicle",
-                    "plate": args.plate,
-                    "plate_confidence": round(rng.uniform(0.78, 0.97), 2),
-                    "captured_at": iso_z(captured_at),
-                    "detector": "simulator",
-                },
-                camera,
-                "route",
-            )
-        )
+        detections.append((payload_for(camera, args.plate, captured_at, 0.78, 0.97), camera, "route"))
 
     # Decoys: 5-8 non-watchlist plates on cameras off the route.
     decoy_count = rng.randint(5, 8)
     for _ in range(decoy_count):
         camera = rng.choice(decoy_cameras)
         captured_at = start + timedelta(seconds=rng.uniform(0.0, span_s))
-        detections.append(
-            (
-                {
-                    "camera_id": camera["id"],
-                    "object_type": "vehicle",
-                    "plate": random_decoy_plate(rng, target_norm),
-                    "plate_confidence": round(rng.uniform(0.60, 0.95), 2),
-                    "captured_at": iso_z(captured_at),
-                    "detector": "simulator",
-                },
-                camera,
-                "decoy",
+        plate = random_decoy_plate(rng, target_norm)
+        detections.append((payload_for(camera, plate, captured_at, 0.60, 0.95), camera, "decoy"))
+
+    # Bait trigger: one sighting of GJ01AB1Z39, whose only watchlist match is
+    # the seeded fuzzy entry GJ01AB1Z34 — so that entry fires every run.
+    bait_camera = rng.choice(decoy_cameras)
+    bait_at = start + timedelta(seconds=rng.uniform(0.2, 0.8) * span_s)
+    detections.append((payload_for(bait_camera, BAIT_TRIGGER_PLATE, bait_at, 0.70, 0.90), bait_camera, "bait"))
+
+    # Optional physics-filter showcase: one impossible sighting of the TARGET
+    # plate on a far-away camera (>= TELEPORT_MIN_KM from the route).
+    #   trailing — injected mid-journey between the last two true sightings:
+    #              the classic greyed-out rejected hop.
+    #   leading  — injected BEFORE the first true sighting: the hostile
+    #              variant, proving the retro-rejection guard (the chain
+    #              re-anchors on the consistent route instead of letting the
+    #              false first sighting poison it).
+    teleport_camera = None
+    if args.inject_teleport != "none":
+        far = [
+            c for c in decoy_cameras
+            if haversine_km(route[0]["lat"], route[0]["lon"], c["lat"], c["lon"]) >= TELEPORT_MIN_KM
+        ]
+        if far:
+            teleport_camera = max(
+                far, key=lambda c: haversine_km(route[0]["lat"], route[0]["lon"], c["lat"], c["lon"])
             )
-        )
+            if args.inject_teleport == "leading":
+                teleport_at = start - timedelta(seconds=45.0)
+            else:  # trailing: between the last two true sightings
+                teleport_at = start + timedelta(seconds=offsets[-2] + leg_seconds[-1] * 0.5)
+            detections.append(
+                (payload_for(teleport_camera, args.plate, teleport_at, 0.80, 0.95), teleport_camera, "teleport")
+            )
+        else:
+            print("WARNING: no camera far enough for --inject-teleport; skipping injection.")
 
     # Post in chronological order, like a live system would have produced.
     detections.sort(key=lambda item: item[0]["captured_at"])
-    return detections, journey_s
+    return detections, journey_s, teleport_camera
 
 
 def post_heartbeats(client: httpx.Client, cameras: list, rng: random.Random) -> int:
@@ -279,6 +356,16 @@ def parse_args(argv=None):
         default=DEFAULT_SEED,
         help="deterministic seed for camera/plate choices (default %(default)s)",
     )
+    parser.add_argument(
+        "--inject-teleport",
+        choices=["none", "trailing", "leading"],
+        default="none",
+        help="inject one physically impossible sighting of the target plate on "
+        "a far-away camera: 'trailing' (mid-journey — the classic rejected "
+        "hop) or 'leading' (BEFORE the first true sighting — exercises the "
+        "route engine's retro-rejection guard against first-sighting "
+        "poisoning). Default: %(default)s",
+    )
     return parser.parse_args(argv)
 
 
@@ -310,9 +397,9 @@ def main(argv=None) -> int:
     route_ids = {c["id"] for c in route}
     decoy_cameras = [c for c in cameras if c["id"] not in route_ids] or cameras
 
-    detections, journey_s = build_detections(route, decoy_cameras, args, rng)
+    detections, journey_s, teleport_camera = build_detections(route, decoy_cameras, args, rng)
 
-    posted = {"route": 0, "decoy": 0}
+    posted = {"route": 0, "decoy": 0, "bait": 0, "teleport": 0}
     alerts = 0
     failures = 0
     decoy_plates = []
@@ -330,6 +417,16 @@ def main(argv=None) -> int:
             alerts += 1
         if kind == "decoy":
             decoy_plates.append(payload["plate"])
+        elif kind == "bait":
+            print(
+                f"  {payload['captured_at']}  {camera.get('name', 'camera ' + str(camera['id']))}"
+                f"  [bait-trigger {payload['plate']} -> fuzzy watchlist entry GJ01AB1Z34]"
+            )
+        elif kind == "teleport":
+            print(
+                f"  {payload['captured_at']}  {camera.get('name', 'camera ' + str(camera['id']))}"
+                f"  [INJECTED {args.inject_teleport} teleport — expect physics rejection]"
+            )
         else:
             print(
                 f"  {payload['captured_at']}  {camera.get('name', 'camera ' + str(camera['id']))}"
@@ -356,6 +453,16 @@ def main(argv=None) -> int:
         f"Decoys: {posted['decoy']} detections on other cameras "
         f"(plates: {', '.join(decoy_plates) if decoy_plates else 'none'})."
     )
+    print(
+        f"Bait trigger: {posted['bait']} sighting of {BAIT_TRIGGER_PLATE} "
+        f"(fires the fuzzy watchlist entry GJ01AB1Z34 at 0.72)."
+    )
+    if teleport_camera is not None:
+        print(
+            f"Teleport injection ({args.inject_teleport}): 1 impossible sighting at "
+            f"{teleport_camera.get('name')} — the route view must reject exactly this one."
+        )
+    print("Snapshots: every sighting carries a synthetic plate-crop JPEG (evidence cards + dossier Appendix A).")
     print(f"Alerts raised by the backend: {alerts} (plate must be on the watchlist - run `python -m app.seed` in backend/).")
     if failures:
         print(f"WARNING: {failures} POSTs failed.")

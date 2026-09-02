@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, dossierPdfUrl, formatLocal } from '../api.js';
+import { api, dossierPdfUrl, formatLocal, snapshotSrc } from '../api.js';
 
 function pct(v) {
   return v == null ? null : `${Math.round(v * 100)}%`;
@@ -228,6 +228,13 @@ export default function RouteSearch({ onRoute, onLocate }) {
                       <td>
                         <span className={rejected ? 'strike' : ''}>{p.camera_name}</span>
                         <div className="cell-sub">{p.department || ''}</div>
+                        {snapshotSrc(p.snapshot_b64) && (
+                          <img
+                            className={`route-snap${rejected ? ' route-snap-rejected' : ''}`}
+                            src={snapshotSrc(p.snapshot_b64)}
+                            alt={`Evidence snapshot, sighting ${i + 1}`}
+                          />
+                        )}
                         {rejected ? (
                           <div className="rejected-reason">
                             &#9888; {p.rejected_reason ||

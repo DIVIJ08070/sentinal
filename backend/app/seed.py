@@ -15,13 +15,15 @@ SEED_ENTRIES = [
         "notes": "Primary demo plate used by the simulator and route reconstruction.",
     },
     {
-        # One OCR-confusion substitution (2<->Z) away from the demo plate —
-        # exercises the fuzzy-match path without ever matching exactly.
+        # One OCR-confusion substitution (2<->Z) away from the demo plate.
+        # The simulator posts one sighting of GJ01AB1Z39 every run — a plate
+        # whose only watchlist match is this entry (fuzzy, distance 1.0) — so
+        # this entry demonstrably fires in every demo.
         "plate": "GJ01AB1Z34",
-        "label": "Fuzzy-bait plate (OCR 2/Z confusion of demo plate)",
+        "label": "Suspect vehicle — burglary case, Ahmedabad (demo)",
         "category": "suspect",
         "priority": "medium",
-        "notes": "Demonstrates fuzzy watchlist matching (match_type=fuzzy).",
+        "notes": "Fires via the simulator's GJ01AB1Z39 sighting (fuzzy match on this entry only).",
     },
     {
         "plate": "GJ05CJ4455",
