@@ -236,3 +236,68 @@ heartbeats for all live cameras (Section 4).
   `distance_km`, and stats (`rejected_count: 1`).
 - `dossier.pdf` -> 200 `application/pdf`, multi-page, snapshot embedded;
   `dossier.json` hash chain recomputes cleanly and detects a tampered row.
+
+---
+
+# Addendum v0.3 — judging-round-1 hardening (backend v0.3)
+
+Adds only; nothing renamed or removed. All items below are covered by
+`make test` (backend/tests/test_smoke.py).
+
+## 7. Alert plausibility (closes the teleport-alert contradiction)
+
+Alert creation runs the SAME physics thresholds as the route filter against
+the plate's most recent prior sighting with coordinates. Alerts gain two
+nullable top-level fields (REST + WS):
+
+```json
+{"plausibility": "confirmed" | "suspect" | null,
+ "plausibility_reason": "implied speed 19566 km/h over 384.2 km in 71s from previous sighting at ... " | null}
+```
+
+Recall-first is unchanged — nothing is suppressed; `suspect` renders as an
+amber "physics-suspect" badge in AlertsPanel, so the alerts feed and the route
+view can never contradict each other in front of a jury.
+
+## 8. Physics filter — retro-rejection (first-sighting poisoning guard)
+
+`_apply_physics_filter` (routes.py): when the CHAIN-START anchor (a point with
+no accepted predecessor) produces >= 2 consecutive rejections that are
+mutually consistent at plausible speeds among themselves, the anchor is the
+outlier: it is rejected retroactively (reason names the flip), the chain
+re-accepted with legs recomputed among itself. Anchors that passed physics
+against a predecessor are never retro-rejected — a lone trailing teleport
+behaves exactly as in v0.2. Demo: `simulator.py --inject-teleport leading|trailing`.
+
+## 9. Append-only audit trail
+
+- Table `audit_log` (insert-only; no update/delete path exists in the code):
+  action, actor, plate, entity_id, params (canonical JSON), created_at.
+- Written on: `route_query`, `watchlist_create/update/delete`, `alert_ack`,
+  `dossier_export`.
+- `GET /api/audit?action=&actor=&plate=&limit=` -> `{total, entries:[...]}`,
+  newest first.
+- Operator identity: `X-Operator` request header, else `SENTINEL_OPERATOR`
+  env, else `demo-operator`. The dossier operator is no longer hard-coded.
+- `dossier.json`/`.pdf` gain an `audit` section: the export's own entry id
+  ("this export is entry N of the audit log"), total at export, and the
+  recent audit rows for the plate (also rendered as a table in the PDF).
+  The hash-chain scheme is unchanged.
+
+## 10. Route query candidate blocking
+
+The route query pre-filters candidates in SQL to plate length ±1 (a weighted
+distance <= 1.0 permits at most one insertion/deletion; canonicalization never
+changes length) before Python scoring — first step of the HLD §6 "matching at
+scale" design.
+
+## 11. Simulator (demo coherence)
+
+- Every sighting now posts a synthetic plate-crop `snapshot_b64` (~5-7 KB
+  JPEG, drawn vehicle rear + raw plate + camera/UTC strip, labeled
+  "SIMULATED FEED") -> alert cards, route evidence thumbnails and dossier
+  Appendix A populate; the exported PDF is a multi-page evidence document.
+- One `GJ01AB1Z39` sighting per run fires the fuzzy-bait watchlist entry
+  `GJ01AB1Z34` (its only match; fuzzy 0.72) — no dead watchlist entries.
+- `--inject-teleport {none,trailing,leading}` (default none — the standard
+  8-point smoke is unchanged).

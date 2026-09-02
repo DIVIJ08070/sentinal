@@ -423,6 +423,36 @@ a 3-broker regional cluster with RF=3 mirrors to central with capacity to
 spare, and gives replay (rebuild the detection store), backpressure, and
 fan-out (alerting, archival, analytics consumers) for free.
 
+**Matching at scale (candidate blocking).** The prototype's route query scans
+plate-bearing detections and scores each with the weighted-distance matcher in
+Python — correct at demo scale, a full-table scan at 32 M detections/day. The
+statewide design makes fuzzy lookup index-shaped instead of scan-shaped:
+
+- Store **`plate_canonical`** (the positional confusion repair from
+  `matching.py`) as its own **indexed column** next to the raw normalized
+  plate; exact and canonical matches become two index lookups.
+- Fuzzy candidates come from **candidate generation, not scanning**: expand
+  the query plate's canonical form over the OCR confusion twins
+  (0/O, 1/I, 5/S, 8/B, 6/G, 2/Z — bounded: ≤ ~2ᵏ variants for k confusable
+  positions, in practice tens) and probe the index with the expansion set,
+  plus a **length window of ±1** (a weighted distance ≤ 1.0 permits at most
+  one insertion/deletion, so nothing outside the window can match). PostgreSQL
+  **pg_trgm** (GIN) is the fallback for the residual single-edit cases the
+  expansion set does not enumerate.
+- Route queries then hit a composite **(plate_canonical, captured_at)** index —
+  time-windowed by the partition scheme in §6.5 — and only the surviving
+  candidates (typically < 10² rows) reach the Python scorer, whose ranked
+  confidences and physics filter are unchanged.
+- Watchlist matching at detection time is bounded the same way: the active
+  watchlist is held in memory keyed by canonical form (a few thousand entries),
+  and each incoming read probes its own confusion expansion against that map —
+  O(expansion) per detection, independent of watchlist growth.
+
+The prototype already ships the first step of this path: the route query
+applies the ±1 length-window pre-filter in SQL before any Python scoring
+(`backend/app/routers/routes.py`), so the contract holds by narrowing
+candidates, not by scanning harder.
+
 ### 6.6 Retention (hot / warm / cold)
 
 | Layer | Where | Keeps | Duration (policy-configurable) |
@@ -456,6 +486,16 @@ event-indexed retrieval from edge NVRs plus alert-triggered clip export.
   acknowledgement, export and login is logged append-only (who, what, when,
   from where). Plate searches are themselves sensitive queries — auditing
   them deters misuse and satisfies court scrutiny of evidence handling.
+  **Implemented in the prototype**: the `audit_log` table (insert-only —
+  no update/delete path exists in the codebase) records every route query,
+  watchlist create/update/delete, alert acknowledgment and dossier export
+  with operator identity and canonical-JSON parameters; `GET /api/audit`
+  exposes it, and each Evidence Dossier cites its own export entry
+  ("this export is entry N of the audit log") plus the recent audit rows
+  for the queried plate. Operator identity comes from the `X-Operator`
+  header (production: the authenticated principal from the RBAC layer
+  above — the prototype deliberately ships the audit substrate without the
+  IAM stack, per the scoping note in §11/battle plan).
 - **Privacy safeguards (DPDP Act 2023 posture)**: purpose limitation (vehicle
   analytics for law-enforcement use), data minimization (plate crops and
   bounded snapshots, not continuous central video), retention limits with

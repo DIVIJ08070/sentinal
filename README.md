@@ -91,13 +91,47 @@ Then run the demo (three terminals — or use `make backend` / `make frontend` /
 3. **Camera sync** — `POST /api/cameras/sync` pulls `{SENTINEL_HOST}/api/ingest`
    and upserts every camera (`source=catalogue`).
 4. **Watchlist seed** — `python -m app.seed` adds ~6 entries including the demo
-   plate `GJ01AB1234` and a fuzzy-bait plate (idempotent).
+   plate `GJ01AB1234` and a fuzzy-bait plate (idempotent). The bait entry fires
+   in every run: the simulator posts one `GJ01AB1Z39` sighting whose only
+   watchlist match is that entry (fuzzy, 0.72).
 5. **Simulated journey** — `ingest/simulator.py` replays a scripted vehicle
    route across ~8 cameras plus decoy plates: end-to-end alerts and route
    reconstruction with zero video/ML dependencies.
 6. **Watch it in the browser** — open http://localhost:5173: live alerts appear
    in the Alerts tab; search `GJ01AB1234` in the Route tab to draw the
    timestamped route on the map.
+
+Every simulated sighting carries a synthetic plate-crop JPEG, so alert cards,
+route evidence thumbnails, and the dossier's Appendix A are fully populated.
+Physics-filter showcases on demand:
+
+```bash
+# Classic rejected hop: an impossible mid-journey sighting ~385 km away
+.venv/bin/python ingest/simulator.py --inject-teleport trailing
+# Hostile variant: the impossible sighting comes FIRST — the route engine
+# retro-rejects the poisoned anchor and keeps the true 8-camera route
+.venv/bin/python ingest/simulator.py --inject-teleport leading
+```
+
+Both raise the watchlist alert (recall-first) stamped `physics-suspect` in the
+alerts feed — the same verdict the route view shows, never a contradiction.
+
+## Verification targets
+
+```bash
+make test        # backend regression suite: route physics (incl. leading-teleport
+                 # retro-rejection), alert plausibility, fuzzy matching, dossier
+                 # SHA-256 hash chain + tamper detection, append-only audit trail
+make anpr-smoke  # proves the REAL video/ML path runs CPU-only with no external
+                 # streams: CaptureLoop (PTS anchor, loop-discontinuity reset)
+                 # + YOLOv8n + fast-plate-ocr on a synthetic clip; logs measured
+                 # frame + inference rates  (needs: pip install -r ingest/requirements-ml.txt)
+```
+
+Every plate search, watchlist change, alert ack and dossier export lands in the
+append-only audit log (`GET /api/audit`); the exported dossier cites its own
+audit entry. Operator identity comes from the `X-Operator` header
+(`SENTINEL_OPERATOR` env as fallback).
 
 ## Hackathon day: pointing at the real government gateway
 
