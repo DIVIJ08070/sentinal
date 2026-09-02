@@ -469,6 +469,42 @@ Continuous centralized video storage is explicitly **rejected**: 80,000 × 2
 Mbps ≈ 1.7 PB/day (~52 PB/month) buys little investigative value over
 event-indexed retrieval from edge NVRs plus alert-triggered clip export.
 
+### 6.7 High availability & disaster recovery
+
+Recovery objectives (stated targets, per tier):
+
+| Tier | Failure | Mechanism | RPO | RTO |
+|---|---|---|---|---|
+| Feed | Camera/stream drop | Backoff reconnect (2→30 s), health board alarm | — (live source) | ≤ 30 s reconnect cycle |
+| Edge | District box loss | Stateless analytics; spare-pool box; cameras rebalanced by the registry | ≤ 60 s of detections | ≤ 30 min swap |
+| Edge | WAN partition | Store-and-forward: detections buffered locally (≥ 72 h) and replayed with original PTS-derived timestamps — no evidence loss, no fabricated times | 0 (buffered) | Automatic on link restore |
+| Regional | GPU node loss | N+1 capacity, camera assignments rebalanced | 0 | ≤ 5 min |
+| Central | Database loss | PostgreSQL streaming replication, promote standby | ≤ 60 s (async WAL) | ≤ 15 min |
+| Central | Site loss | Active–passive across two state data centres (primary SDC + DR site); object storage cross-replicated; Kafka mirrored | ≤ 5 min | ≤ 60 min, alerts degrade to region-local delivery meanwhile |
+
+Backups: nightly full + continuous WAL archiving, 30-day cycle, quarterly
+restore drills as SOP. The append-only audit chain's daily hash anchor is
+copied to immutable storage, so tampering **across restores** is detectable —
+DR that preserves chain-of-custody, not just data.
+
+Departmental NVR footage keeps its existing departmental DR posture: the
+platform adds no new single point of failure to video retention (Model 2
+principle — source systems remain independent).
+
+### 6.8 Statewide rollout plan (phased)
+
+| Phase | Scope | Cameras | Key gates |
+|---|---|---|---|
+| 0 (wk 0–8) | PoC hardening at SCRB; registry (Model 1) opened **statewide from day one** — metadata onboarding costs no bandwidth | ~500 live (Gandhinagar + Ahmedabad) | Read-rate & uptime KPIs on live feeds; security audit |
+| 1 (mo 3–6) | One full police range; ANPR on high-value corridors; operator SOPs, training, 24×7 helpdesk | ~5,000 | Range CP sign-off; alert-to-action drill |
+| 2 (mo 6–12) | Four ranges; regional edge sites live; VAHAN / eGujCop adapters in production | ~25,000 | Cross-range route reconstruction exercise |
+| 3 (mo 12–24) | Statewide incl. Junagadh, Somnath, Dwarka and border districts; permitted private/society cameras via viewing-only onboarding | ~80,000 | State review; DR failover drill |
+
+Each department joins with the **onboarding kit**: the prerequisites form
+(section 9), a network checklist, and the camera-metadata CSV template — the
+same format the registry's bulk import already accepts today, so Phase 0 needs
+no new tooling.
+
 ---
 
 ## 7. Cybersecurity
