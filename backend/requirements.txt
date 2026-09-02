@@ -5,3 +5,5 @@ pydantic>=2.7,<3.0
 httpx>=0.27,<1.0
 python-multipart>=0.0.9,<1.0
 fpdf2>=2.7,<3.0
+# Test-only (make test)
+pytest>=8.0,<9.0
