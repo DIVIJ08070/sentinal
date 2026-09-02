@@ -181,6 +181,19 @@ def test_alert_plausibility_stamps(client, journey):
     assert by_id[journey["route"][0]]["detection"]["snapshot_b64"] == TINY_JPEG
 
 
+def test_fuzzy_alert_gets_a_plausibility_stamp_too(client, journey):
+    """Regression (live-report wart 3): the prior-sighting lookup used to
+    filter on the stored MISREAD string, so a fuzzy alert could never find the
+    vehicle's real prior sightings and always showed plausibility null next to
+    exact rows saying 'confirmed'. The lookup now covers the matched watchlist
+    plate + canonical form: the GJ01A81234 misread (camera 5, 10 s after the
+    true camera-5 sighting -> same location) must stamp 'confirmed'."""
+    r = client.get("/api/alerts", params={"limit": 200})
+    fuzzy = {a["id"]: a for a in r.json()}[journey["fuzzy"]]
+    assert fuzzy["match_type"] == "fuzzy"
+    assert fuzzy["plausibility"] == "confirmed"
+
+
 def test_fuzzy_bait_entry_fires(client, journey):
     assert journey["bait"] is not None
     r = client.get("/api/alerts", params={"limit": 200})
@@ -248,6 +261,59 @@ def test_audit_trail_is_written_and_queryable(client, journey):
     scoped = client.get("/api/audit", params={"plate": PLATE}).json()
     assert all(e["plate"] == PLATE for e in scoped["entries"])
     assert any(e["action"] == "dossier_export" for e in scoped["entries"])
+
+
+def test_audit_log_hash_chain_verifies_and_detects_tampering(client, journey):
+    """The audit log is hash-chained like the dossier: every row's row_hash
+    covers its canonical content + the previous row's hash. ?verify=1
+    recomputes the whole chain; editing any historical row breaks it."""
+    from app.audit import GENESIS_HASH
+    from app.models import AuditLog
+
+    audit = client.get("/api/audit", params={"verify": 1, "limit": 500}).json()
+    chain = audit["chain"]
+    assert chain["algorithm"] == "sha256"
+    assert chain["genesis_hash"] == GENESIS_HASH
+    assert chain["verified"] is True
+    assert chain["broken_at_entry"] is None
+    assert chain["entries_verified"] == audit["total"] > 0
+    # Head is the newest row's hash, and rows link prev->row by recomputation.
+    newest = audit["entries"][0]
+    assert chain["head"] == newest["row_hash"]
+    prev = sha256_hex(canonical_json({
+        "action": newest["action"], "actor": newest["actor"],
+        "plate": newest["plate"], "entity_id": newest["entity_id"],
+        "params": canonical_json(newest["params"]) if newest["params"] is not None else None,
+        "created_at": newest["created_at"], "prev_hash": newest["prev_hash"],
+    }))
+    assert prev == newest["row_hash"]
+
+    # A dossier generated now cites the current chain head as its export entry.
+    d = client.get(f"/api/vehicles/{PLATE}/dossier.json").json()
+    assert d["audit"]["chain_head"]
+    assert d["audit"]["chain_head"][:16] in d["audit"]["statement"]
+    head_after = client.get("/api/audit").json()["chain"]["head"]
+    assert head_after == d["audit"]["chain_head"]
+
+    # Tamper with one historical row directly in the DB (attacker with SQL
+    # access): the chain must break exactly there, then verify again once
+    # the original value is restored.
+    with SessionLocal() as session:
+        row = session.query(AuditLog).order_by(AuditLog.id.asc()).first()
+        original = row.actor
+        row.actor = "tampered-actor"
+        session.commit()
+        tampered_id = row.id
+    try:
+        broken = client.get("/api/audit", params={"verify": 1}).json()["chain"]
+        assert broken["verified"] is False
+        assert broken["broken_at_entry"] == tampered_id
+    finally:
+        with SessionLocal() as session:
+            row = session.get(AuditLog, tampered_id)
+            row.actor = original
+            session.commit()
+    assert client.get("/api/audit", params={"verify": 1}).json()["chain"]["verified"] is True
 
 
 def test_dossier_no_sightings_is_a_certified_negative(client, journey):

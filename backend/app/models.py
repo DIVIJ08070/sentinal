@@ -123,6 +123,14 @@ class AuditLog(Base):
     acknowledgment, and dossier export. There is no UPDATE or DELETE path for
     this table anywhere in the codebase — rows are only ever inserted, and the
     dossier cites its own export entry so query provenance is verifiable.
+
+    Tamper evidence (mirrors the dossier's sighting chain, app/routers/
+    dossier.py): every row carries prev_hash (the previous row's row_hash, or
+    the fixed genesis hash for row 1) and row_hash = sha256(canonical JSON of
+    {action, actor, plate, entity_id, params, created_at, prev_hash}).
+    Editing or deleting ANY historical row breaks every subsequent hash —
+    "append-only" is verifiable by recomputation (GET /api/audit?verify=1),
+    not just asserted by code-path absence.
     """
     __tablename__ = "audit_log"
 
@@ -133,3 +141,6 @@ class AuditLog(Base):
     entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # id of the touched row, when applicable
     params: Mapped[str | None] = mapped_column(Text, nullable=True)  # canonical JSON of request parameters
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    # Hash chain (sha256 hex): computed at INSERT time by app/audit.py.
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    row_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

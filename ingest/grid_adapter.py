@@ -88,8 +88,14 @@ def normalize_entry(entry, index, total, host, cdn):
         "urls": {
             "rtsp": _get(urls, "rtsp") or _get(entry, "rtsp", "rtsp_url")
             or RTSP_TEMPLATE.format(host=host, id=cam_id),
-            "hls": _get(urls, "hls") or _get(entry, "hls", "hls_url")
-            or HLS_TEMPLATE.format(cdn=cdn, id=cam_id),
+            # A relay override (GRID_HLS_TEMPLATE) always wins so the dashboard
+            # plays local relay HLS instead of the password-gated CDN.
+            "hls": (
+                HLS_TEMPLATE.format(cdn=cdn, id=cam_id)
+                if os.environ.get("GRID_HLS_TEMPLATE")
+                else (_get(urls, "hls") or _get(entry, "hls", "hls_url")
+                      or HLS_TEMPLATE.format(cdn=cdn, id=cam_id))
+            ),
             "whep": _get(urls, "whep") or _get(entry, "whep", "whep_url")
             or WHEP_TEMPLATE.format(host=host, id=cam_id),
         },

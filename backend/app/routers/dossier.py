@@ -161,10 +161,16 @@ def build_dossier(
         "audit": {
             "export_entry_id": export_entry.id,
             "log_entries_at_export": audit_total,
+            # The audit log is itself hash-chained (app/audit.py); this export
+            # entry is the chain head at generation time — sealing the dossier
+            # to the state of the whole audit trail, not just one row.
+            "chain_head": export_entry.row_hash,
             "statement": (
-                f"This export is entry {export_entry.id} of the append-only "
-                f"audit log ({audit_total} entries at generation time). "
-                f"Query provenance: GET /api/audit?plate={route['plate']}"
+                f"This export is entry {export_entry.id} of the append-only, "
+                f"hash-chained audit log ({audit_total} entries at generation "
+                f"time; chain head {(export_entry.row_hash or '')[:16]}...). "
+                f"Query provenance: GET /api/audit?plate={route['plate']} — "
+                f"verify the log's own chain via GET /api/audit?verify=1"
             ),
             "recent_for_plate": [audit_to_dict(row) for row in recent_rows],
         },

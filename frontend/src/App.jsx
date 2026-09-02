@@ -17,6 +17,15 @@ const TABS = [
   { id: 'health', label: 'Health' },
 ];
 
+// Deep-link support: ?tab=route&trace=GJ01AB1234 opens the given tab and (for
+// the route tab) immediately runs the trace — lets an operator share a link
+// straight to a vehicle's route, and makes demo states reproducible.
+const URL_PARAMS = new URLSearchParams(window.location.search);
+const INITIAL_TAB = TABS.some((t) => t.id === URL_PARAMS.get('tab'))
+  ? URL_PARAMS.get('tab')
+  : 'alerts';
+const INITIAL_TRACE = (URL_PARAMS.get('trace') || '').trim();
+
 function CamerasTab({ cameras, onSelect, onSync, syncing }) {
   const [filter, setFilter] = useState('');
 
@@ -87,7 +96,7 @@ export default function App() {
   const [route, setRoute] = useState(null);
   const [selectedCameraId, setSelectedCameraId] = useState(null);
   const [panTarget, setPanTarget] = useState(null);
-  const [activeTab, setActiveTab] = useState('alerts');
+  const [activeTab, setActiveTab] = useState(INITIAL_TAB);
   const [wallOpen, setWallOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
@@ -231,7 +240,11 @@ export default function App() {
             <WatchlistPanel onStatsChanged={loadStats} />
           </div>
           <div className={`tab-page${activeTab === 'route' ? ' active' : ''}`}>
-            <RouteSearch onRoute={setRoute} onLocate={panTo} />
+            <RouteSearch
+              onRoute={setRoute}
+              onLocate={panTo}
+              initialPlate={INITIAL_TRACE}
+            />
           </div>
           <div className={`tab-page${activeTab === 'cameras' ? ' active' : ''}`}>
             <CamerasTab

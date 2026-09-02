@@ -28,6 +28,11 @@ export function HlsPlayer({ src }) {
           }
         }
       });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        // Autoplay attribute alone doesn't fire when the source attaches
+        // after mount; muted play() is allowed by browser autoplay policy.
+        video.play().catch(() => {});
+      });
       hls.loadSource(src);
       hls.attachMedia(video);
       return () => {

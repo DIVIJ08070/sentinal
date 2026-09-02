@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..matching import find_watchlist_match, normalize
+from ..matching import canonicalize, find_watchlist_match, normalize
 from ..models import Alert, Camera, Detection, WatchlistEntry
 from ..schemas import DetectionCreate, DetectionOut, alert_to_dict, as_naive_utc, iso_z
 from ..ws import manager
@@ -23,11 +23,18 @@ _MIN_DT_S = 0.1  # divide-by-zero guard (same as the route physics filter)
 
 
 def _alert_plausibility(
-    db: Session, camera: Camera, plate: str, captured_at, exclude_detection_id: int
+    db: Session, camera: Camera, plates: set[str], captured_at, exclude_detection_id: int
 ) -> tuple[str | None, str | None]:
     """Physics sanity check at ALERT time, using the exact thresholds of the
-    route physics filter (routes.py): implied speed from the plate's most
+    route physics filter (routes.py): implied speed from the vehicle's most
     recent prior sighting with coordinates to this one.
+
+    ``plates`` is the set of stored-plate spellings that count as "the same
+    vehicle" for the prior-sighting lookup: the detection's own normalized
+    read, the matched watchlist entry's plate, and the canonical repaired
+    form. Without this, a FUZZY alert (stored misread string, e.g.
+    GJ01A81234) could never find the vehicle's real prior sightings and
+    always carried plausibility null next to exact rows saying 'confirmed'.
 
     Recall-first by design — nothing is suppressed. 'suspect' just means the
     alerts feed and the route view already agree: this sighting implies a
@@ -40,7 +47,7 @@ def _alert_plausibility(
         db.query(Detection, Camera)
         .join(Camera, Detection.camera_id == Camera.id)
         .filter(
-            Detection.plate == plate,
+            Detection.plate.in_(sorted(p for p in plates if p)),
             Detection.id != exclude_detection_id,
             Detection.captured_at <= captured_at,
             Camera.lat.isnot(None),
@@ -122,8 +129,12 @@ async def create_detection(payload: DetectionCreate, db: Session = Depends(get_d
         entries = db.query(WatchlistEntry).filter(WatchlistEntry.active.is_(True)).all()
         entry, match_type, match_confidence = find_watchlist_match(plate, entries)
         if entry is not None:
+            # Prior sightings of the SAME VEHICLE, not the same misread string:
+            # the raw normalized read, the matched watchlist plate, and the
+            # canonical (confusion-repaired) form all identify this vehicle.
+            same_vehicle = {plate, entry.plate, canonicalize(plate)}
             plausibility, plausibility_reason = _alert_plausibility(
-                db, camera, plate, detection.captured_at, detection.id
+                db, camera, same_vehicle, detection.captured_at, detection.id
             )
             alert = Alert(
                 detection_id=detection.id,

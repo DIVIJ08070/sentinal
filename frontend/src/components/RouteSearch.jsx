@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, dossierPdfUrl, formatLocal, snapshotSrc } from '../api.js';
 
 function pct(v) {
@@ -15,18 +15,17 @@ function pct(v) {
  * `rejected_reason`; accepted legs carry `leg_km` / `implied_speed_kmh`
  * chips; fuzzy matches show `match_confidence` + the raw `matched_from` read.
  */
-export default function RouteSearch({ onRoute, onLocate }) {
-  const [plate, setPlate] = useState('');
+export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
+  const [plate, setPlate] = useState(initialPlate);
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
   const [route, setRoute] = useState(null);
   const [searchWindow, setSearchWindow] = useState({}); // {since, until} of the last search — reused for the dossier export
   const [status, setStatus] = useState('idle'); // idle | loading | done | empty | error
   const [error, setError] = useState(null);
+  const autoTraced = useRef(false);
 
-  const search = async (e) => {
-    e.preventDefault();
-    const p = plate.trim();
+  const runTrace = async (p) => {
     if (!p) return;
     setStatus('loading');
     setError(null);
@@ -52,6 +51,20 @@ export default function RouteSearch({ onRoute, onLocate }) {
       setStatus('error');
     }
   };
+
+  const search = (e) => {
+    e.preventDefault();
+    runTrace(plate.trim());
+  };
+
+  // Deep link (?tab=route&trace=PLATE): run the trace once on mount.
+  useEffect(() => {
+    if (initialPlate && !autoTraced.current) {
+      autoTraced.current = true;
+      runTrace(initialPlate.trim());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const clear = () => {
     setPlate('');

@@ -2,11 +2,11 @@
   "cameras": [
     {
       "id": "cam01",
-      "name": "cam01 [sandbox]",
+      "name": "Chiman bhai Bridge, Ahmedabad",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.2156,
-        "lon": 72.6999
+        "lat": 23.058,
+        "lon": 72.552
       },
       "codec": "h264",
       "width": 1920,
@@ -15,17 +15,17 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam01",
-        "hls": "https://cctv.corp8.cloud/cam01/index.m3u8",
+        "hls": "http://localhost:8888/cam01/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam01/whep"
       }
     },
     {
       "id": "cam02",
-      "name": "cam02 [sandbox]",
+      "name": "Janpath, Ahmedabad",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.224956,
-        "lon": 72.698523
+        "lat": 23.03,
+        "lon": 72.58
       },
       "codec": "h264",
       "width": 1920,
@@ -34,17 +34,17 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam02",
-        "hls": "https://cctv.corp8.cloud/cam02/index.m3u8",
+        "hls": "http://localhost:8888/cam02/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam02/whep"
       }
     },
     {
       "id": "cam03",
-      "name": "cam03 [sandbox]",
+      "name": "O.N.G.C. Office, Chandkheda",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.233903,
-        "lon": 72.694453
+        "lat": 23.11,
+        "lon": 72.59
       },
       "codec": "h264",
       "width": 1280,
@@ -59,11 +59,11 @@
     },
     {
       "id": "cam04",
-      "name": "cam04 [sandbox]",
+      "name": "Paldi Circle, Ahmedabad",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.24205,
-        "lon": 72.687868
+        "lat": 23.012,
+        "lon": 72.56
       },
       "codec": "h264",
       "width": 1920,
@@ -72,17 +72,17 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam04",
-        "hls": "https://cctv.corp8.cloud/cam04/index.m3u8",
+        "hls": "http://localhost:8888/cam04/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam04/whep"
       }
     },
     {
       "id": "cam05",
-      "name": "cam05 [sandbox]",
+      "name": "Visat Teen Rasta, Chandkheda",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.249042,
-        "lon": 72.679055
+        "lat": 23.108,
+        "lon": 72.586
       },
       "codec": "h264",
       "width": 1920,
@@ -91,17 +91,17 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam05",
-        "hls": "https://cctv.corp8.cloud/cam05/index.m3u8",
+        "hls": "http://localhost:8888/cam05/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam05/whep"
       }
     },
     {
       "id": "cam06",
-      "name": "cam06 [sandbox]",
+      "name": "Timbavadi Gate, Junagadh",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.254571,
-        "lon": 72.6684
+        "lat": 21.49,
+        "lon": 70.445
       },
       "codec": "hevc",
       "width": 1920,
@@ -116,11 +116,11 @@
     },
     {
       "id": "cam07",
-      "name": "cam07 [sandbox]",
+      "name": "Hero Showroom, Gir Somnath",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.258398,
-        "lon": 72.656368
+        "lat": 20.912,
+        "lon": 70.367
       },
       "codec": "h264",
       "width": 1920,
@@ -135,11 +135,11 @@
     },
     {
       "id": "cam08",
-      "name": "cam08 [sandbox]",
+      "name": "Majewadi Gate, Junagadh",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.260353,
-        "lon": 72.643485
+        "lat": 21.535,
+        "lon": 70.462
       },
       "codec": "h264",
       "width": 1920,
@@ -154,11 +154,11 @@
     },
     {
       "id": "cam09",
-      "name": "cam09 [sandbox]",
+      "name": "New Bypass Circle 2, Junagadh",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.260353,
-        "lon": 72.630315
+        "lat": 21.52,
+        "lon": 70.48
       },
       "codec": "h264",
       "width": 1920,
@@ -173,11 +173,11 @@
     },
     {
       "id": "cam10",
-      "name": "cam10 [sandbox]",
+      "name": "Char Chowk Road 2, Junagadh",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.258398,
-        "lon": 72.617432
+        "lat": 21.526,
+        "lon": 70.463
       },
       "codec": "h264",
       "width": 1920,
@@ -192,11 +192,11 @@
     },
     {
       "id": "cam11",
-      "name": "cam11 [sandbox]",
+      "name": "Dolatpara, Junagadh",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.254571,
-        "lon": 72.6054
+        "lat": 21.552,
+        "lon": 70.475
       },
       "codec": "h264",
       "width": 1920,
@@ -211,11 +211,11 @@
     },
     {
       "id": "cam12",
-      "name": "cam12 [sandbox]",
+      "name": "Tri Mandir Adalaj Tollnaka, Gandhinagar",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.249042,
-        "lon": 72.594745
+        "lat": 23.164,
+        "lon": 72.581
       },
       "codec": "hevc",
       "width": 1280,
@@ -230,11 +230,11 @@
     },
     {
       "id": "cam13",
-      "name": "cam13 [sandbox]",
+      "name": "CN Vidhyalaya, Ambawadi Ahmedabad",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.24205,
-        "lon": 72.585932
+        "lat": 23.017,
+        "lon": 72.554
       },
       "codec": "h264",
       "width": 1920,
@@ -249,7 +249,7 @@
     },
     {
       "id": "cam14",
-      "name": "cam14 [sandbox]",
+      "name": "Delight RLVD Junction",
       "department": "Sandbox Grid",
       "location": {
         "lat": 23.233903,
@@ -268,7 +268,7 @@
     },
     {
       "id": "cam15",
-      "name": "cam15 [sandbox]",
+      "name": "Suvidha Park",
       "department": "Sandbox Grid",
       "location": {
         "lat": 23.224956,
@@ -287,11 +287,11 @@
     },
     {
       "id": "cam16",
-      "name": "cam16 [sandbox]",
+      "name": "Visat P2, Chandkheda",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.2156,
-        "lon": 72.5739
+        "lat": 23.109,
+        "lon": 72.585
       },
       "codec": "h264",
       "width": 1920,
@@ -300,17 +300,17 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam16",
-        "hls": "https://cctv.corp8.cloud/cam16/index.m3u8",
+        "hls": "http://localhost:8888/cam16/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam16/whep"
       }
     },
     {
       "id": "cam17",
-      "name": "cam17 [sandbox]",
+      "name": "Rajkot Bus Port CCTV",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.206244,
-        "lon": 72.575277
+        "lat": 22.291,
+        "lon": 70.793
       },
       "codec": "hevc",
       "width": 1920,
@@ -325,11 +325,11 @@
     },
     {
       "id": "cam18",
-      "name": "cam18 [sandbox]",
+      "name": "Rajkot CCTV",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.197297,
-        "lon": 72.579347
+        "lat": 22.303,
+        "lon": 70.802
       },
       "codec": "hevc",
       "width": 1920,
@@ -344,11 +344,11 @@
     },
     {
       "id": "cam19",
-      "name": "cam19 [sandbox]",
+      "name": "Khaparia Gram Panchayat, Gandevi, Navsari",
       "department": "Sandbox Grid",
       "location": {
-        "lat": 23.18915,
-        "lon": 72.585932
+        "lat": 20.812,
+        "lon": 72.985
       },
       "codec": "h264",
       "width": 1280,
@@ -363,7 +363,7 @@
     },
     {
       "id": "cam20",
-      "name": "cam20 [sandbox]",
+      "name": "Mohanpura",
       "department": "Sandbox Grid",
       "location": {
         "lat": 23.182158,
@@ -433,7 +433,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam23",
-        "hls": "https://cctv.corp8.cloud/cam23/index.m3u8",
+        "hls": "http://localhost:8888/cam23/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam23/whep"
       }
     },
@@ -509,7 +509,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam27",
-        "hls": "https://cctv.corp8.cloud/cam27/index.m3u8",
+        "hls": "http://localhost:8888/cam27/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam27/whep"
       }
     },
@@ -571,5 +571,6 @@
       }
     }
   ],
-  "_source": "rtsp-probe"
+  "_source": "rtsp-probe",
+  "_names_source": "portal screenshot 2026-09-02; coords approximate landmark-level"
 }
