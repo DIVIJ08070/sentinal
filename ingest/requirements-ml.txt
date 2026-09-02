@@ -13,3 +13,8 @@ fast-plate-ocr[onnx]>=1.0,<2.0
 # and fails to initialize against it; numpy < 2 keeps the ML path working on
 # every dev/deploy platform (base requirements allow >=1.26,<3.0).
 numpy>=1.26,<2.0
+# Plate LOCALIZER (same author as fast-plate-ocr, ONNX, CPU-friendly): finds
+# the plate inside the YOLO vehicle crop before OCR — fast-plate-ocr is
+# trained on tight plate crops, and whole-vehicle input capped confidence at
+# ~0.46 on the real grid (docs/EVIDENCE.md §3-4).
+open-image-models>=0.6,<1.0

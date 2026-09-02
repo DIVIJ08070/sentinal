@@ -1,4 +1,4 @@
-"""Real ANPR detector: YOLOv8n vehicle detection + fast-plate-ocr reading.
+"""Real ANPR detector: YOLOv8n vehicles + plate localization + fast-plate-ocr.
 
 Heavy ML dependencies are OPTIONAL and live in ingest/requirements-ml.txt;
 importing this module without them raises a clear ImportError pointing there
@@ -6,14 +6,28 @@ importing this module without them raises a clear ImportError pointing there
 
 Pipeline per frame:
   1. YOLOv8n detects vehicles (COCO classes car / motorbike / bus / truck).
-  2. Each vehicle bbox is cropped from the frame BEFORE OCR.
-  3. fast-plate-ocr reads a registration number from the crop.
-  4. On a successful read, the result carries the bbox (JSON) and a small
-     base64 JPEG snapshot of the vehicle crop (max ~320 px wide). Snapshots
-     are attached ONLY when a plate was read.
+  2. Each vehicle bbox is cropped from the frame.
+  3. A dedicated plate LOCALIZER (open_image_models.LicensePlateDetector,
+     the fast-plate-ocr author's companion ONNX detector, model
+     yolo-v9-t-384-license-plate-end2end, CPU-friendly) finds the plate
+     inside the vehicle crop — fast-plate-ocr is trained on TIGHT plate
+     crops, and feeding it whole vehicles capped confidence at ~0.46 on the
+     real sandbox grid with a near-zero real-scene read rate. If no vehicle
+     crop yields a plate, the localizer runs once on the FULL frame (plates
+     on vehicles YOLO missed or clipped).
+  4. The plate bbox is padded ~2 px, and crops narrower than 96 px are
+     upscaled with INTER_CUBIC before OCR. This exact combination was
+     validated live on the government sandbox grid (read CMMC701 off cam23).
+  5. fast-plate-ocr reads the registration number.
+  6. On a successful read, the result carries the bbox (JSON) and a small
+     base64 JPEG snapshot of the VEHICLE crop with the plate visible (max
+     ~320 px wide). Snapshots are attached ONLY when a plate was read.
+
+If open-image-models is not installed the detector degrades to the old
+whole-vehicle-crop OCR path instead of failing.
 
 The first YOLO(...) call downloads yolov8n.pt (~6 MB) if not cached; the OCR
-model is fetched by fast-plate-ocr on first use.
+and plate-localizer models are fetched on first use, then cached.
 """
 
 import base64
@@ -30,8 +44,8 @@ os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 
 _INSTALL_HINT = (
     "The 'anpr' detector needs the optional ML extras (ultralytics + "
-    "fast-plate-ocr), which are kept out of the default requirements on "
-    "purpose. From the ingest/ directory run:\n\n"
+    "fast-plate-ocr + open-image-models), which are kept out of the default "
+    "requirements on purpose. From the ingest/ directory run:\n\n"
     "    pip install -r requirements-ml.txt\n\n"
     "then retry with --detector anpr (or use --detector mock, which has no "
     "ML dependencies)."
@@ -54,6 +68,14 @@ try:
 except ImportError as exc:
     raise ImportError(f"fast-plate-ocr is not installed. {_INSTALL_HINT}") from exc
 
+try:
+    # Plate localizer (same author as fast-plate-ocr, ONNX, CPU-ok). A missing
+    # package or failed model download must never kill the ANPR path — the
+    # detector degrades to whole-vehicle-crop OCR.
+    from open_image_models import LicensePlateDetector as _PlateLocalizer
+except ImportError:  # pragma: no cover - optional extra
+    _PlateLocalizer = None
+
 # cv2 here is used for image ops only; the FFmpeg transport option was set at
 # the top of this module, before ultralytics could pull cv2 in transitively.
 import cv2
@@ -74,11 +96,24 @@ class AnprDetector(Detector):
         ocr_model: Optional[str] = None,
         vehicle_conf: float = 0.4,
         min_plate_len: int = 6,
-        min_plate_confidence: float = 0.55,
+        # 0.35, down from 0.55 — recalibrated on the real sandbox grid
+        # (docs/EVIDENCE.md): recall-first by design. The confidence is always
+        # DISPLAYED on every alert/route row, and the false-positive side is
+        # absorbed downstream by the confusion-tolerant matcher + the route
+        # physics filter (both regression-tested), so a sub-certain read is
+        # evidence with a stated confidence, not silence.
+        min_plate_confidence: float = 0.35,
         dedup_window_ms: float = 5000.0,
         plateless_interval_ms: float = 3000.0,
         snapshot_max_width: int = 320,
         min_crop_px: int = 32,
+        plate_model: str = "yolo-v9-t-384-license-plate-end2end",
+        plate_conf: float = 0.25,
+        # Plate crops narrower than this are INTER_CUBIC-upscaled before OCR;
+        # 96 px + ~2 px bbox pad is the combination validated live on the
+        # sandbox grid (read CMMC701 off cam23).
+        ocr_min_plate_width: int = 96,
+        plate_pad_px: int = 2,
     ):
         self.vehicle_conf = float(vehicle_conf)
         self.min_plate_len = int(min_plate_len)
@@ -87,6 +122,9 @@ class AnprDetector(Detector):
         self.plateless_interval_ms = float(plateless_interval_ms)
         self.snapshot_max_width = int(snapshot_max_width)
         self.min_crop_px = int(min_crop_px)
+        self.plate_conf = float(plate_conf)
+        self.ocr_min_plate_width = int(ocr_min_plate_width)
+        self.plate_pad_px = int(plate_pad_px)
 
         # One model instance per detector; the worker creates one detector per
         # camera thread, keeping inference thread-confined. Batch shape is
@@ -94,6 +132,28 @@ class AnprDetector(Detector):
         # (gateway rule 7: mixed codecs/resolutions).
         self._yolo = YOLO(yolo_model)
         self._ocr = _PlateRecognizer(ocr_model or _DEFAULT_OCR_MODEL)
+
+        # Plate localizer: optional, never fatal (degrades to vehicle-crop OCR).
+        # Pinned to the CPU execution provider: onnxruntime's CoreML EP fails
+        # on zero-detection frames ("dynamic shape {-1} ... zero elements")
+        # and misbehaves with several concurrent camera threads in one
+        # process; CPU EP is deterministic and fast enough (~t-384 model).
+        self._plate_detector = None
+        if _PlateLocalizer is not None and plate_model:
+            try:
+                self._plate_detector = _PlateLocalizer(
+                    plate_model,
+                    conf_thresh=self.plate_conf,
+                    providers=["CPUExecutionProvider"],
+                )
+            except TypeError:
+                # Older open-image-models without a providers kwarg.
+                self._plate_detector = _PlateLocalizer(
+                    plate_model, conf_thresh=self.plate_conf
+                )
+            except Exception as exc:  # model download/init failure
+                print(f"anpr: plate localizer unavailable ({exc}); "
+                      f"falling back to whole-vehicle-crop OCR")
 
         self._recent_plates = {}        # plate -> last emitted pts_ms
         self._last_plateless_pts = None
@@ -111,6 +171,7 @@ class AnprDetector(Detector):
         height, width = frame.shape[:2]
         results: List[DetectionResult] = []
         best_vehicle: Optional[Tuple[float, Tuple[int, int, int, int]]] = None
+        localized_any = False
 
         for box in prediction.boxes:
             x1, y1, x2, y2 = (int(round(v)) for v in box.xyxy[0].tolist())
@@ -122,10 +183,23 @@ class AnprDetector(Detector):
             if best_vehicle is None or conf > best_vehicle[0]:
                 best_vehicle = (conf, (x1, y1, x2, y2))
 
-            # Crop the vehicle bbox BEFORE OCR - the OCR model expects a
-            # tight vehicle/plate region, not the full scene.
+            # Localize the plate INSIDE the vehicle crop, then OCR the tight
+            # plate region — fast-plate-ocr expects a plate crop, not a whole
+            # vehicle.
             crop = frame[y1:y2, x1:x2]
-            plate, plate_conf = self._read_plate(crop)
+            located = self._localize_plate(crop)
+            if located is not None:
+                localized_any = True
+                ocr_src = located[0]
+            elif self._plate_detector is None:
+                # Degrade path (open-image-models not installed): OCR the
+                # whole vehicle crop as before.
+                ocr_src = crop
+            else:
+                # Localizer active but no plate in this vehicle crop; the
+                # full-frame fallback below may still catch it.
+                continue
+            plate, plate_conf = self._read_plate(self._ocr_input(ocr_src))
             if plate is None:
                 continue
             if not self._should_emit(plate, pts_ms):
@@ -136,10 +210,43 @@ class AnprDetector(Detector):
                     plate=plate,
                     plate_confidence=plate_conf,
                     bbox=json.dumps([x1, y1, x2, y2]),
-                    # Snapshot only when a plate was read.
+                    # Snapshot only when a plate was read: the VEHICLE crop
+                    # with the plate visible.
                     snapshot_b64=self._encode_snapshot(crop),
                 )
             )
+
+        # Full-frame fallback: no vehicle crop yielded a plate bbox — run the
+        # localizer once over the whole frame (vehicles YOLO missed/clipped).
+        if not results and not localized_any and self._plate_detector is not None:
+            located = self._localize_plate(frame)
+            if located is not None:
+                region, (px1, py1, px2, py2) = located
+                plate, plate_conf = self._read_plate(self._ocr_input(region))
+                if plate is not None and self._should_emit(plate, pts_ms):
+                    if best_vehicle is not None:
+                        _, (vx1, vy1, vx2, vy2) = best_vehicle
+                        snap = frame[vy1:vy2, vx1:vx2]
+                        bbox = [vx1, vy1, vx2, vy2]
+                    else:
+                        # No vehicle bbox: snapshot a context region around
+                        # the plate so the vehicle is still visible.
+                        cw, ch = (px2 - px1), (py2 - py1)
+                        sx1 = max(0, px1 - 2 * cw)
+                        sy1 = max(0, py1 - 4 * ch)
+                        sx2 = min(width, px2 + 2 * cw)
+                        sy2 = min(height, py2 + 2 * ch)
+                        snap = frame[sy1:sy2, sx1:sx2]
+                        bbox = [px1, py1, px2, py2]
+                    results.append(
+                        DetectionResult(
+                            object_type="vehicle",
+                            plate=plate,
+                            plate_confidence=plate_conf,
+                            bbox=json.dumps(bbox),
+                            snapshot_b64=self._encode_snapshot(snap),
+                        )
+                    )
 
         if not results and best_vehicle is not None:
             # Plate-less vehicle sightings are throttled by elapsed PTS so a
@@ -171,8 +278,54 @@ class AnprDetector(Detector):
 
     # -------------------------------------------------------------- helpers
 
+    def _localize_plate(self, image):
+        """Best plate inside `image` via open-image-models, or None.
+
+        Returns (padded plate crop, (x1, y1, x2, y2) in image coords).
+        None when the localizer is absent, errored, or found nothing above
+        plate_conf. The bbox is padded by plate_pad_px so tight boxes don't
+        clip character strokes (validated live: CMMC701 on cam23).
+        """
+        if self._plate_detector is None:
+            return None
+        try:
+            detections = self._plate_detector.predict(image)
+        except Exception:
+            return None
+        best = None
+        for det in detections or []:
+            if best is None or det.confidence > best.confidence:
+                best = det
+        if best is None:
+            return None
+        bb = best.bounding_box
+        h, w = image.shape[:2]
+        pad = self.plate_pad_px
+        x1, y1 = max(0, int(bb.x1) - pad), max(0, int(bb.y1) - pad)
+        x2, y2 = min(w, int(bb.x2) + pad), min(h, int(bb.y2) + pad)
+        if (x2 - x1) < 8 or (y2 - y1) < 4:
+            return None
+        return image[y1:y2, x1:x2], (x1, y1, x2, y2)
+
+    def _ocr_input(self, region):
+        """Upscale narrow plate crops before OCR.
+
+        Crops narrower than ocr_min_plate_width px are INTER_CUBIC-upscaled
+        to that width (plate pixel size was the measured bottleneck on the
+        real grid; this exact preprocessing read CMMC701 off cam23 live).
+        """
+        h, w = region.shape[:2]
+        if 0 < w < self.ocr_min_plate_width:
+            scale = self.ocr_min_plate_width / float(w)
+            region = cv2.resize(
+                region,
+                (self.ocr_min_plate_width, max(1, int(round(h * scale)))),
+                interpolation=cv2.INTER_CUBIC,
+            )
+        return region
+
     def _read_plate(self, crop) -> Tuple[Optional[str], Optional[float]]:
-        """Run OCR on a vehicle crop; returns (plate, confidence) or (None, None).
+        """Run OCR on a plate crop; returns (plate, confidence) or (None, None).
 
         Handles every fast-plate-ocr output shape:
           * >= 1.1: list of PlatePrediction(plate=..., char_probs=...)
@@ -242,6 +395,8 @@ class AnprDetector(Detector):
         try:
             image = crop
             h, w = image.shape[:2]
+            if h < 1 or w < 1:
+                return None
             if w > self.snapshot_max_width:
                 scale = self.snapshot_max_width / float(w)
                 image = cv2.resize(
