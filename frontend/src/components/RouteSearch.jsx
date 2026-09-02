@@ -66,6 +66,16 @@ export default function RouteSearch({ onRoute, onLocate }) {
 
   const stats = route ? route.stats : null;
 
+  // W2 guard: every returned point is a fuzzy candidate — there is NO exact
+  // sighting of the searched plate. Say so loudly before the table, so the
+  // route reads as "confusion-tolerant candidates, ranked" and never as
+  // "another vehicle's route presented as this plate's".
+  const allFuzzy =
+    route && route.points.length > 0 && route.points.every((p) => p.fuzzy);
+  const bestFuzzy = allFuzzy
+    ? Math.max(...route.points.map((p) => p.match_confidence || 0))
+    : null;
+
   return (
     <div>
       <div className="panel-title">
@@ -136,6 +146,19 @@ export default function RouteSearch({ onRoute, onLocate }) {
 
       {route && stats && (
         <div>
+          {allFuzzy && (
+            <div className="all-fuzzy-banner">
+              <strong>
+                No exact sightings of <span className="mono">{route.plate}</span>.
+              </strong>{' '}
+              Showing {route.points.length} confusion-tolerant candidate
+              sighting{route.points.length === 1 ? '' : 's'}
+              {bestFuzzy ? ` (best match ${pct(bestFuzzy)})` : ''} — every row
+              is flagged <span className="badge fuzzy">fuzzy</span> at its own
+              confidence, ranked and never silently merged. Verify the raw OCR
+              read on each row before treating this as the vehicle&apos;s route.
+            </div>
+          )}
           <div className="route-stats">
             <div className="route-stat">
               <div className="k">First seen</div>

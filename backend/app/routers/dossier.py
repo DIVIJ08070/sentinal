@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from ..audit import audit_to_dict, record as audit_record, resolve_operator
+from ..auth import require_role
 from ..db import get_db
 from ..matching import find_watchlist_match, normalize
 from ..models import AuditLog, WatchlistEntry, utcnow
@@ -38,6 +39,12 @@ router = APIRouter(tags=["dossier"])
 
 AUDIT_ROWS_CITED = 8  # most recent audit rows for this plate cited in the export
 HASH_ALGORITHM = "sha256"
+NO_SIGHTINGS_NOTICE = (
+    "NO SIGHTINGS ON RECORD FOR THIS PLATE IN THE QUERIED WINDOW. This dossier "
+    "certifies the ABSENCE of any sighting — it contains no movement evidence. "
+    "The hash chain below seals only the case metadata (genesis) so this "
+    "negative result is itself tamper-evident."
+)
 CUSTODY_STATEMENT = (
     "CHAIN OF CUSTODY: Every sighting row above is sealed into a SHA-256 hash "
     "chain — each row's hash covers its own canonical content plus the hash of "
@@ -140,8 +147,15 @@ def build_dossier(
         sightings.append({**row, "row_hash": row_hash, "snapshot_b64": snapshot_b64})
         prev_hash = row_hash
 
+    # W1 guard: a plate with zero rows (nothing accepted, nothing rejected) is
+    # a CERTIFIED NEGATIVE RESULT, flagged loudly in JSON and stamped as a red
+    # banner on the PDF — never an official-looking dossier about nothing.
+    no_sightings = len(route["points"]) == 0
+
     return {
         **metadata,
+        "no_sightings": no_sightings,
+        "notice": NO_SIGHTINGS_NOTICE if no_sightings else None,
         "watchlist": watchlist,
         "stats": route["stats"],
         "audit": {
@@ -205,6 +219,16 @@ def _render_pdf(dossier: dict) -> bytes:
                         "generated demo artifact"),
              new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.ln(3)
+
+    # -- No-sightings banner (W1: certified negative result) ----------------
+    if dossier.get("no_sightings"):
+        pdf.set_fill_color(185, 28, 28)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.multi_cell(0, 7, _txt(dossier["notice"] or NO_SIGHTINGS_NOTICE),
+                       fill=True, border=1, align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(20, 20, 20)
+        pdf.ln(3)
 
     # -- Case metadata ------------------------------------------------------
     pdf.set_text_color(20, 20, 20)
@@ -389,6 +413,7 @@ def dossier_json(
     since: datetime | None = None,
     until: datetime | None = None,
     db: Session = Depends(get_db),
+    _principal=Depends(require_role("operator")),
 ):
     """Timestamped movement report incl. the full hash chain (machine-verifiable)."""
     return build_dossier(db, plate, since, until, resolve_operator(request), "json")
@@ -401,6 +426,7 @@ def dossier_pdf(
     since: datetime | None = None,
     until: datetime | None = None,
     db: Session = Depends(get_db),
+    _principal=Depends(require_role("operator")),
 ):
     dossier = build_dossier(db, plate, since, until, resolve_operator(request), "pdf")
     content = _render_pdf(dossier)

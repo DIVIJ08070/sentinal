@@ -5,10 +5,13 @@ dossier export inserts one row into audit_log. Rows are only ever INSERTed —
 no update/delete path exists anywhere in the app — so the table is an
 append-only record of who queried what, when, with which parameters.
 
-Operator identity: the ``X-Operator`` request header when present, else the
-``SENTINEL_OPERATOR`` env var, else ``"demo-operator"``. (Full JWT RBAC is a
-deliberate non-goal for the prototype — see docs/BATTLE_PLAN.md §6; the audit
-trail is the part the demo and the dossier actually show.)
+Operator identity, in priority order:
+1. the authenticated token principal (``app/auth.py``, when SENTINEL_TOKENS
+   is set) — authoritative, cannot be spoofed by a client header;
+2. otherwise (open demo mode only) the ``X-Operator`` request header;
+3. the ``SENTINEL_OPERATOR`` env var, else ``"demo-operator"``.
+When auth is enabled the X-Operator header is IGNORED — a client that skips
+authentication is recorded as ``unauthenticated``, never as whoever it claims.
 """
 import json
 import os
@@ -16,6 +19,7 @@ import os
 from fastapi import Request
 from sqlalchemy.orm import Session
 
+from .auth import auth_enabled, principal_for
 from .models import AuditLog
 
 DEFAULT_OPERATOR = os.getenv("SENTINEL_OPERATOR", "demo-operator")
@@ -24,6 +28,13 @@ OPERATOR_HEADER = "X-Operator"
 
 def resolve_operator(request: Request | None) -> str:
     """Operator identity for audit rows and the dossier."""
+    principal = principal_for(request)
+    if principal is not None:
+        return f"{principal['name']} ({principal['role']})"[:128]
+    if auth_enabled():
+        # Auth is on but this request carried no valid token: never fall back
+        # to the spoofable header for the identity on a custody document.
+        return "unauthenticated"
     if request is not None:
         header = request.headers.get(OPERATOR_HEADER)
         if header and header.strip():

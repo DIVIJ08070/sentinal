@@ -90,6 +90,17 @@ export default function HealthPanel() {
       ? Math.round(totals.total_bandwidth_kbps / totals.streams_up)
       : null;
 
+  // Measured upstream metadata rate (detection POST bytes over the rolling
+  // window) — the live counterpart of the video figure: the 1000x edge story
+  // as two numbers on one board instead of a caption.
+  const metaKbps = totals.metadata_kbps_upstream;
+  const metaPerCam =
+    metaKbps != null && totals.streams_up > 0
+      ? metaKbps / totals.streams_up
+      : null;
+  const fmtMetaKbps = (v) =>
+    v == null ? '—' : v >= 10 ? `${Math.round(v)} Kbps` : `${Number(v).toFixed(1)} Kbps`;
+
   return (
     <div>
       <div className="panel-title">
@@ -119,19 +130,31 @@ export default function HealthPanel() {
               <span className="stat-label">Reconnects 1h</span>
               <span className="stat-value">{totals.reconnects_1h ?? '—'}</span>
             </div>
-            <div className="stat-chip" title="Sum of measured stream bandwidth over live cameras">
-              <span className="stat-label">Bandwidth</span>
+            <div className="stat-chip" title="Sum of measured stream bandwidth over live cameras — this video never leaves the edge">
+              <span className="stat-label">Video (edge)</span>
               <span className="stat-value">
                 {fmtBandwidth(totals.total_bandwidth_kbps)}
               </span>
             </div>
+            <div
+              className="stat-chip"
+              title={`Measured from actual detection POST payload bytes over the last ${
+                totals.metadata_window_s ? Math.round(totals.metadata_window_s / 60) : 10
+              } min (${totals.detections_window ?? 0} detections) — the only traffic that goes upstream`}
+            >
+              <span className="stat-label">Metadata upstream</span>
+              <span className="stat-value ok">{fmtMetaKbps(metaKbps)}</span>
+            </div>
           </div>
           <div className="health-caption">
             {perCamKbps != null
-              ? `~${fmtBandwidth(perCamKbps)}/camera of video stays at the edge — `
-              : 'Video stays at the edge — '}
-            only ~1–3 Kbps/camera of detection metadata goes upstream at
-            80,000-camera scale.
+              ? `Video at the edge: ~${fmtBandwidth(perCamKbps)}/camera. `
+              : 'Video stays at the edge. '}
+            {metaPerCam != null
+              ? `Metadata upstream: ~${fmtMetaKbps(metaPerCam)}/camera, measured live — `
+              : 'Metadata upstream: ~1–3 Kbps/camera — '}
+            the ratio that makes 80,000 cameras a metadata problem, not a
+            160 Gbps video problem.
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..audit import record as audit_record, resolve_operator
+from ..auth import require_role
 from ..db import get_db
 from ..matching import normalize
 from ..models import WatchlistEntry
@@ -16,7 +17,8 @@ def list_watchlist(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=WatchlistOut)
-def create_entry(payload: WatchlistCreate, request: Request, db: Session = Depends(get_db)):
+def create_entry(payload: WatchlistCreate, request: Request, db: Session = Depends(get_db),
+                 _principal=Depends(require_role("operator"))):
     plate = normalize(payload.plate)
     if not plate:
         raise HTTPException(status_code=422, detail="plate must contain at least one alphanumeric character")
@@ -41,7 +43,8 @@ def create_entry(payload: WatchlistCreate, request: Request, db: Session = Depen
 
 
 @router.patch("/{entry_id}", response_model=WatchlistOut)
-def patch_entry(entry_id: int, payload: WatchlistPatch, request: Request, db: Session = Depends(get_db)):
+def patch_entry(entry_id: int, payload: WatchlistPatch, request: Request, db: Session = Depends(get_db),
+                _principal=Depends(require_role("operator"))):
     entry = db.get(WatchlistEntry, entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="watchlist entry not found")
@@ -63,7 +66,8 @@ def patch_entry(entry_id: int, payload: WatchlistPatch, request: Request, db: Se
 
 
 @router.delete("/{entry_id}")
-def delete_entry(entry_id: int, request: Request, db: Session = Depends(get_db)):
+def delete_entry(entry_id: int, request: Request, db: Session = Depends(get_db),
+                 _principal=Depends(require_role("operator"))):
     entry = db.get(WatchlistEntry, entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="watchlist entry not found")

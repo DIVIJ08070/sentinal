@@ -130,8 +130,18 @@ make anpr-smoke  # proves the REAL video/ML path runs CPU-only with no external
 
 Every plate search, watchlist change, alert ack and dossier export lands in the
 append-only audit log (`GET /api/audit`); the exported dossier cites its own
-audit entry. Operator identity comes from the `X-Operator` header
-(`SENTINEL_OPERATOR` env as fallback).
+audit entry. In the default open demo mode, operator identity comes from the
+`X-Operator` header (`SENTINEL_OPERATOR` env as fallback). To demonstrate
+RBAC-lite, set a token map and restart the backend:
+
+```bash
+export SENTINEL_TOKENS="tok-view:ps-desk:viewer,tok-op:insp-sharma:operator,tok-admin:sp-admin:admin"
+```
+
+With auth on, watchlist mutations, alert acks and dossier exports require
+`Authorization: Bearer <token>` (401 without, 403 below the required role:
+viewer < operator < admin), and the identity on audit rows and the dossier
+comes from the token — the spoofable header is ignored.
 
 ## Hackathon day: pointing at the real government gateway
 

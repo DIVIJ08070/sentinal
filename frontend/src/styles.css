@@ -421,6 +421,25 @@ label.field {
   margin: 8px 0;
 }
 
+/* Route where EVERY point is a fuzzy candidate — no exact sighting of the
+   searched plate exists. Prominent amber banner above the results (W2). */
+.all-fuzzy-banner {
+  border: 1px solid var(--amber);
+  border-left-width: 4px;
+  background: var(--amber-soft);
+  color: #fde68a;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 8px 0 10px;
+}
+
+.all-fuzzy-banner .badge.fuzzy {
+  vertical-align: middle;
+  margin: 0 2px;
+}
+
 /* ---- Badges & plates ---------------------------------------------------- */
 
 .badge {

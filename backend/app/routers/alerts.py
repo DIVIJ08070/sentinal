@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 
 from ..audit import record as audit_record, resolve_operator
+from ..auth import require_role
 from ..db import get_db
 from ..models import Alert, utcnow
 from ..schemas import alert_to_dict
@@ -27,7 +28,8 @@ def list_alerts(
 
 
 @router.post("/{alert_id}/ack")
-def acknowledge_alert(alert_id: int, request: Request, db: Session = Depends(get_db)):
+def acknowledge_alert(alert_id: int, request: Request, db: Session = Depends(get_db),
+                      _principal=Depends(require_role("operator"))):
     alert = db.get(Alert, alert_id)
     if alert is None:
         raise HTTPException(status_code=404, detail="alert not found")

@@ -492,10 +492,15 @@ event-indexed retrieval from edge NVRs plus alert-triggered clip export.
   with operator identity and canonical-JSON parameters; `GET /api/audit`
   exposes it, and each Evidence Dossier cites its own export entry
   ("this export is entry N of the audit log") plus the recent audit rows
-  for the queried plate. Operator identity comes from the `X-Operator`
-  header (production: the authenticated principal from the RBAC layer
-  above — the prototype deliberately ships the audit substrate without the
-  IAM stack, per the scoping note in §11/battle plan).
+  for the queried plate. **RBAC-lite is implemented too**: setting
+  `SENTINEL_TOKENS` ("token:name:role,...") turns on a three-role token gate
+  (viewer < operator < admin) enforced on watchlist mutations, alert
+  acknowledgment and dossier export, and operator identity on audit rows and
+  the dossier then comes from the authenticated token — never from the
+  spoofable `X-Operator` header (which is honoured only in the open demo
+  mode, when auth is off). Production replaces the static token map with the
+  OIDC/RBAC layer above; key management and IAM integration remain design
+  provisions.
 - **Privacy safeguards (DPDP Act 2023 posture)**: purpose limitation (vehicle
   analytics for law-enforcement use), data minimization (plate crops and
   bounded snapshots, not continuous central video), retention limits with

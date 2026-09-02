@@ -248,3 +248,67 @@ def test_audit_trail_is_written_and_queryable(client, journey):
     scoped = client.get("/api/audit", params={"plate": PLATE}).json()
     assert all(e["plate"] == PLATE for e in scoped["entries"])
     assert any(e["action"] == "dossier_export" for e in scoped["entries"])
+
+
+def test_dossier_no_sightings_is_a_certified_negative(client, journey):
+    """W1: probing a nonsense plate must NOT yield an official-looking evidence
+    dossier — the export flags itself as a certified negative result."""
+    r = client.get("/api/vehicles/GJ99XX0007/dossier.json")
+    assert r.status_code == 200  # dossier.json IS the report contract: 200 + flag, not 404
+    d = r.json()
+    assert d["no_sightings"] is True
+    assert "ABSENCE" in d["notice"]
+    assert d["stats"]["sightings_count"] == 0
+    assert d["stats"]["rejected_count"] == 0
+    assert d["sightings"] == []
+    # Empty route: chain is genesis-only and still tamper-evident.
+    assert d["hash_chain"]["final_hash"] == d["hash_chain"]["genesis_hash"]
+    pdf = client.get("/api/vehicles/GJ99XX0007/dossier.pdf")
+    assert pdf.status_code == 200
+    assert pdf.content.startswith(b"%PDF")
+    # A plate WITH sightings must not carry the flag.
+    d2 = client.get(f"/api/vehicles/{PLATE}/dossier.json").json()
+    assert d2["no_sightings"] is False
+    assert d2["notice"] is None
+
+
+AUTH_TOKENS = "tok-view:ps-desk:viewer,tok-op:insp-sharma:operator,tok-admin:sp-admin:admin"
+
+
+def test_auth_open_demo_mode_unchanged(client, journey):
+    """Without SENTINEL_TOKENS the pre-auth demo behaviour is untouched."""
+    r = client.post("/api/watchlist", json={"plate": "GJ77AA0001", "label": "open mode"})
+    assert r.status_code == 200
+    assert client.delete(f"/api/watchlist/{r.json()['id']}").status_code == 200
+
+
+def test_auth_token_role_gate(client, journey, monkeypatch):
+    """RBAC-lite: 401 without a token, 403 below role, and the audit/dossier
+    operator identity comes from the TOKEN — X-Operator is ignored."""
+    monkeypatch.setenv("SENTINEL_TOKENS", AUTH_TOKENS)
+    body = {"plate": "GJ77AA0002", "label": "authed"}
+    assert client.post("/api/watchlist", json=body).status_code == 401
+    assert client.post(
+        "/api/watchlist", json=body, headers={"Authorization": "Bearer tok-view"}
+    ).status_code == 403
+    r = client.post(
+        "/api/watchlist", json=body,
+        headers={"Authorization": "Bearer tok-op", "X-Operator": "spoofed-name"},
+    )
+    assert r.status_code == 200
+    entry_id = r.json()["id"]
+    audit = client.get("/api/audit", params={"limit": 5}).json()
+    created = [e for e in audit["entries"] if e["action"] == "watchlist_create"][0]
+    assert created["actor"] == "insp-sharma (operator)"  # token identity, not the header
+
+    # Dossier export is gated and stamps the token principal as operator.
+    assert client.get(f"/api/vehicles/{PLATE}/dossier.json").status_code == 401
+    d = client.get(
+        f"/api/vehicles/{PLATE}/dossier.json",
+        headers={"X-Auth-Token": "tok-op", "X-Operator": "spoofed-name"},
+    ).json()
+    assert d["operator"] == "insp-sharma (operator)"
+
+    assert client.delete(
+        f"/api/watchlist/{entry_id}", headers={"Authorization": "Bearer tok-admin"}
+    ).status_code == 200

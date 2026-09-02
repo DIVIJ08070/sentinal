@@ -1,0 +1,16 @@
+cam05: frames=163 vehicle_crops=161 raw_ocr_reads=161
+  conf min/median/max = 0.19/0.30/0.46
+    B33067 conf=0.24
+    33336 conf=0.396
+    B36076 conf=0.269
+    C200 conf=0.351
+    B36277 conf=0.284
+    K0000 conf=0.331
+    3333 conf=0.381
+    B36777 conf=0.278
+    6048 conf=0.336
+    2370 conf=0.376
+    K33777 conf=0.255
+    4644 conf=0.389
+cam09: frames=219 vehicle_crops=0 raw_ocr_reads=0
+cam12: frames=159 vehicle_crops=0 raw_ocr_reads=0
