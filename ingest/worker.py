@@ -93,20 +93,39 @@ def fetch_cameras(client: httpx.Client, args) -> list:
             exc,
         )
 
-    resp = client.get("/api/cameras", params={"source": "catalogue", "status": "live"})
-    resp.raise_for_status()
-    cameras = resp.json()
-    cameras.sort(key=lambda c: c.get("id") or 0)
-
     if args.cameras:
+        # An explicit --cameras id list is the operator's word: fetch the FULL
+        # registry (manual/csv/catalogue, any status) and select exactly those
+        # ids, so a manually onboarded camera (e.g. own recorded footage
+        # registered via POST /api/cameras with a file path as rtsp_url) can be
+        # captured too. The source=catalogue&status=live filter below only
+        # guards the default select-everything path.
+        resp = client.get("/api/cameras")
+        resp.raise_for_status()
+        cameras = resp.json()
+        cameras.sort(key=lambda c: c.get("id") or 0)
         wanted = {int(part) for part in args.cameras.split(",") if part.strip()}
         cameras = [c for c in cameras if c.get("id") in wanted]
         missing = wanted - {c.get("id") for c in cameras}
         if missing:
             logger.warning(
-                "requested camera ids not in the live catalogue set: %s",
+                "requested camera ids not registered in the backend: %s",
                 sorted(missing),
             )
+        for cam in cameras:
+            if cam.get("status") != "live" or cam.get("source") != "catalogue":
+                logger.info(
+                    "explicitly requested camera %s (source=%s, status=%s) - "
+                    "capturing as ordered",
+                    cam.get("id"), cam.get("source"), cam.get("status"),
+                )
+    else:
+        resp = client.get(
+            "/api/cameras", params={"source": "catalogue", "status": "live"}
+        )
+        resp.raise_for_status()
+        cameras = resp.json()
+        cameras.sort(key=lambda c: c.get("id") or 0)
 
     if len(cameras) > args.max_cameras:
         logger.info(
