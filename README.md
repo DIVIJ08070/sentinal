@@ -2,6 +2,32 @@
 
 Prototype for the **Gujarat Police CCTV Hackathon 2026** (sentinel.gujarat.gov.in).
 
+**Plate to court in sixty seconds — on the cameras Gujarat already owns.**
+SENTINEL turns a registration number into a court-ready answer: type a plate
+once and the platform reconstructs the vehicle's timestamped, location-wise
+route on a GIS map, recovers OCR misreads with confusion-tolerant matching at
+displayed confidence, visibly rejects physically impossible hops ("214 km/h —
+discarded as false ANPR match"), fires live watchlist alerts, and exports a
+SHA-256 hash-chained chain-of-custody Evidence Dossier in one click. It has
+onboarded the full government sandbox grid — 30 heterogeneous cameras — via
+catalogue sync and produced 27 real, PTS-timestamped plate reads CPU-only;
+the 80,000-camera story is edge-first arithmetic (1–3 Kbps of metadata per
+camera upstream, video never leaves departmental DVRs, ₹3–7k per *existing*
+camera), not adjectives.
+
+## Submission artifacts
+
+| Artifact | Location |
+|---|---|
+| Master submission checklist + Apply-Now form answers | [deliverables/SUBMISSION_PACKAGE.md](deliverables/SUBMISSION_PACKAGE.md) |
+| Presentation (12 slides, score-sheet-mirrored) | [deliverables/SENTINEL_Presentation.pptx](deliverables/SENTINEL_Presentation.pptx) (source: [docs/deck/build_deck.py](docs/deck/build_deck.py)) |
+| High-Level Design — PDF (mermaid rendered) | [deliverables/SENTINEL_HLD.pdf](deliverables/SENTINEL_HLD.pdf) (source: [docs/HLD.md](docs/HLD.md), exporter: [scripts/export-hld-pdf.py](scripts/export-hld-pdf.py)) |
+| Government-feed output report (timestamped detections) | [deliverables/GOV_FEED_OUTPUT_REPORT.md](deliverables/GOV_FEED_OUTPUT_REPORT.md) · [PDF](deliverables/GOV_FEED_OUTPUT_REPORT.pdf) |
+| Demo video A — own feed (2–3 min) | `deliverables/SENTINEL_OwnFeed_Demo.mp4` — record Sept 6 (shot list: [docs/BATTLE_PLAN.md](docs/BATTLE_PLAN.md) §4) |
+| Demo video B — government feed | `deliverables/SENTINEL_GovFeed_Demo.mp4` — record Sept 5 golden run |
+| Camera legibility ranking (live-grid soak) | [docs/CAMERA_RANKING.md](docs/CAMERA_RANKING.md) |
+| Deliverables checklist (recording guidance) | [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md) — **deadline 7 Sept 2026** |
+
 **Solution model: Hybrid — Model 1 + Model 2/4.**
 
 - **Model 1 (mandatory): Camera Registry & GIS** — catalogue-driven onboarding of
