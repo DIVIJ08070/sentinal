@@ -1,0 +1,10 @@
+# Sentinel ingest — optional ML extras for the real ANPR path
+# (detectors/anpr.py). Install on top of requirements.txt:
+#
+#     pip install -r requirements.txt -r requirements-ml.txt
+#
+# Pulls in torch as a transitive dependency of ultralytics; only needed when
+# running:  python worker.py --detector anpr
+-r requirements.txt
+ultralytics>=8.2,<9.0
+fast-plate-ocr>=0.3,<2.0

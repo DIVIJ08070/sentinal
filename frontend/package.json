@@ -1,0 +1,23 @@
+{
+  "name": "sentinel-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "SENTINEL - Unified CCTV Command (Gujarat CCTV Hackathon 2026 prototype frontend)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "hls.js": "^1.5.0",
+    "leaflet": "^1.9.4",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "react-leaflet": "^4.2.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "vite": "^5.4.0"
+  }
+}
