@@ -53,7 +53,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam03",
-        "hls": "https://cctv.corp8.cloud/cam03/index.m3u8",
+        "hls": "http://localhost:8888/cam03/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam03/whep"
       }
     },
@@ -110,7 +110,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam06",
-        "hls": "https://cctv.corp8.cloud/cam06/index.m3u8",
+        "hls": "http://localhost:8888/cam06/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam06/whep"
       }
     },
@@ -129,7 +129,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam07",
-        "hls": "https://cctv.corp8.cloud/cam07/index.m3u8",
+        "hls": "http://localhost:8888/cam07/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam07/whep"
       }
     },
@@ -148,7 +148,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam08",
-        "hls": "https://cctv.corp8.cloud/cam08/index.m3u8",
+        "hls": "http://localhost:8888/cam08/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam08/whep"
       }
     },
@@ -167,7 +167,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam09",
-        "hls": "https://cctv.corp8.cloud/cam09/index.m3u8",
+        "hls": "http://localhost:8888/cam09/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam09/whep"
       }
     },
@@ -186,7 +186,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam10",
-        "hls": "https://cctv.corp8.cloud/cam10/index.m3u8",
+        "hls": "http://localhost:8888/cam10/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam10/whep"
       }
     },
@@ -205,7 +205,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam11",
-        "hls": "https://cctv.corp8.cloud/cam11/index.m3u8",
+        "hls": "http://localhost:8888/cam11/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam11/whep"
       }
     },
@@ -224,7 +224,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam12",
-        "hls": "https://cctv.corp8.cloud/cam12/index.m3u8",
+        "hls": "http://localhost:8888/cam12/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam12/whep"
       }
     },
@@ -243,7 +243,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam13",
-        "hls": "https://cctv.corp8.cloud/cam13/index.m3u8",
+        "hls": "http://localhost:8888/cam13/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam13/whep"
       }
     },
@@ -262,7 +262,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam14",
-        "hls": "https://cctv.corp8.cloud/cam14/index.m3u8",
+        "hls": "http://localhost:8888/cam14/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam14/whep"
       }
     },
@@ -281,7 +281,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam15",
-        "hls": "https://cctv.corp8.cloud/cam15/index.m3u8",
+        "hls": "http://localhost:8888/cam15/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam15/whep"
       }
     },
@@ -319,7 +319,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam17",
-        "hls": "https://cctv.corp8.cloud/cam17/index.m3u8",
+        "hls": "http://localhost:8888/cam17/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam17/whep"
       }
     },
@@ -338,7 +338,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam18",
-        "hls": "https://cctv.corp8.cloud/cam18/index.m3u8",
+        "hls": "http://localhost:8888/cam18/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam18/whep"
       }
     },
@@ -357,7 +357,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam19",
-        "hls": "https://cctv.corp8.cloud/cam19/index.m3u8",
+        "hls": "http://localhost:8888/cam19/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam19/whep"
       }
     },
@@ -376,7 +376,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam20",
-        "hls": "https://cctv.corp8.cloud/cam20/index.m3u8",
+        "hls": "http://localhost:8888/cam20/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam20/whep"
       }
     },
@@ -395,7 +395,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam21",
-        "hls": "https://cctv.corp8.cloud/cam21/index.m3u8",
+        "hls": "http://localhost:8888/cam21/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam21/whep"
       }
     },
@@ -414,7 +414,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam22",
-        "hls": "https://cctv.corp8.cloud/cam22/index.m3u8",
+        "hls": "http://localhost:8888/cam22/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam22/whep"
       }
     },
@@ -452,7 +452,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam24",
-        "hls": "https://cctv.corp8.cloud/cam24/index.m3u8",
+        "hls": "http://localhost:8888/cam24/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam24/whep"
       }
     },
@@ -471,7 +471,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam25",
-        "hls": "https://cctv.corp8.cloud/cam25/index.m3u8",
+        "hls": "http://localhost:8888/cam25/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam25/whep"
       }
     },
@@ -490,7 +490,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam26",
-        "hls": "https://cctv.corp8.cloud/cam26/index.m3u8",
+        "hls": "http://localhost:8888/cam26/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam26/whep"
       }
     },
@@ -528,7 +528,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam28",
-        "hls": "https://cctv.corp8.cloud/cam28/index.m3u8",
+        "hls": "http://localhost:8888/cam28/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam28/whep"
       }
     },
@@ -547,7 +547,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam29",
-        "hls": "https://cctv.corp8.cloud/cam29/index.m3u8",
+        "hls": "http://localhost:8888/cam29/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam29/whep"
       }
     },
@@ -566,7 +566,7 @@
       "live": true,
       "urls": {
         "rtsp": "rtsp://103.250.160.189:8554/stream/cam30",
-        "hls": "https://cctv.corp8.cloud/cam30/index.m3u8",
+        "hls": "http://localhost:8888/cam30/index.m3u8",
         "whep": "http://103.250.160.189:8889/stream/cam30/whep"
       }
     }

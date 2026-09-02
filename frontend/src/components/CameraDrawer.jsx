@@ -10,33 +10,73 @@ import { formatLocal } from '../api.js';
 export function HlsPlayer({ src }) {
   const videoRef = useRef(null);
   const [failed, setFailed] = useState(false);
+  const [connecting, setConnecting] = useState(true);
 
   useEffect(() => {
     setFailed(false);
+    setConnecting(true);
     if (!src) return undefined;
     const video = videoRef.current;
     if (!video) return undefined;
+    const onPlaying = () => setConnecting(false);
+    video.addEventListener('playing', onPlaying);
 
     if (Hls.isSupported()) {
-      let hls = new Hls({ liveDurationInfinity: true });
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data && data.fatal) {
-          setFailed(true);
-          if (hls) {
-            hls.destroy();
+      // On-demand relay streams spin up when first requested: the manifest can
+      // 503 for up to a minute while ffmpeg connects to the camera and waits
+      // for a keyframe. During a startup grace window we treat fatal errors as
+      // "not ready yet" — tear down and rebuild the hls instance — and only
+      // surface "unavailable" once the grace window has elapsed.
+      const GRACE_MS = 90000;
+      const startedAt = Date.now();
+      let hls = null;
+      let retryTimer = null;
+      let disposed = false;
+
+      const patient = {
+        default: {
+          maxTimeToFirstByteMs: 20000,
+          maxLoadTimeMs: 40000,
+          timeoutRetry: { maxNumRetry: 6, retryDelayMs: 2000, maxRetryDelayMs: 5000 },
+          errorRetry: { maxNumRetry: 8, retryDelayMs: 2000, maxRetryDelayMs: 4000 },
+        },
+      };
+
+      const build = () => {
+        if (disposed) return;
+        hls = new Hls({
+          liveDurationInfinity: true,
+          manifestLoadPolicy: patient,
+          playlistLoadPolicy: patient,
+        });
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (!data || !data.fatal) return;
+          if (Date.now() - startedAt < GRACE_MS) {
+            // Still warming up — rebuild and try again shortly.
+            try { hls.destroy(); } catch (_e) { /* noop */ }
+            hls = null;
+            retryTimer = setTimeout(build, 3000);
+          } else {
+            setFailed(true);
+            try { if (hls) hls.destroy(); } catch (_e) { /* noop */ }
             hls = null;
           }
-        }
-      });
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        // Autoplay attribute alone doesn't fire when the source attaches
-        // after mount; muted play() is allowed by browser autoplay policy.
-        video.play().catch(() => {});
-      });
-      hls.loadSource(src);
-      hls.attachMedia(video);
+        });
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          // Autoplay attribute alone doesn't fire when the source attaches
+          // after mount; muted play() is allowed by browser autoplay policy.
+          video.play().catch(() => {});
+        });
+        hls.loadSource(src);
+        hls.attachMedia(video);
+      };
+      build();
+
       return () => {
-        if (hls) hls.destroy();
+        disposed = true;
+        video.removeEventListener('playing', onPlaying);
+        if (retryTimer) clearTimeout(retryTimer);
+        if (hls) { try { hls.destroy(); } catch (_e) { /* noop */ } }
       };
     }
 
@@ -45,6 +85,7 @@ export function HlsPlayer({ src }) {
       video.addEventListener('error', onError);
       video.src = src;
       return () => {
+        video.removeEventListener('playing', onPlaying);
         video.removeEventListener('error', onError);
         video.removeAttribute('src');
         video.load();
@@ -52,7 +93,7 @@ export function HlsPlayer({ src }) {
     }
 
     setFailed(true);
-    return undefined;
+    return () => video.removeEventListener('playing', onPlaying);
   }, [src]);
 
   if (!src) {
@@ -66,14 +107,34 @@ export function HlsPlayer({ src }) {
     return <div className="stream-fallback">Stream unavailable.</div>;
   }
   return (
-    <video
-      ref={videoRef}
-      className="stream-video"
-      autoPlay
-      muted
-      playsInline
-      controls
-    />
+    <div style={{ position: 'relative' }}>
+      <video
+        ref={videoRef}
+        className="stream-video"
+        autoPlay
+        muted
+        playsInline
+        controls
+      />
+      {connecting && (
+        <div
+          className="stream-fallback"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          Connecting to live camera…
+          <br />
+          first open can take up to a minute
+        </div>
+      )}
+    </div>
   );
 }
 
