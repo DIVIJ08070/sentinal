@@ -1,10 +1,15 @@
 # Sentinel ingest — optional ML extras for the real ANPR path
 # (detectors/anpr.py). Install on top of requirements.txt:
 #
-#     pip install -r requirements.txt -r requirements-ml.txt
+#     pip install -r requirements-ml.txt
 #
 # Pulls in torch as a transitive dependency of ultralytics; only needed when
-# running:  python worker.py --detector anpr
+# running:  python worker.py --detector anpr   (or: make anpr-smoke)
 -r requirements.txt
 ultralytics>=8.2,<9.0
-fast-plate-ocr>=0.3,<2.0
+# The [onnx] extra is required: fast-plate-ocr >= 1.0 ships without a runtime.
+fast-plate-ocr[onnx]>=1.0,<2.0
+# torch <= 2.2.2 (the last build published for Intel macOS) predates numpy 2
+# and fails to initialize against it; numpy < 2 keeps the ML path working on
+# every dev/deploy platform (base requirements allow >=1.26,<3.0).
+numpy>=1.26,<2.0

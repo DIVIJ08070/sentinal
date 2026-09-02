@@ -172,34 +172,59 @@ class AnprDetector(Detector):
     # -------------------------------------------------------------- helpers
 
     def _read_plate(self, crop) -> Tuple[Optional[str], Optional[float]]:
-        """Run OCR on a vehicle crop; returns (plate, confidence) or (None, None)."""
+        """Run OCR on a vehicle crop; returns (plate, confidence) or (None, None).
+
+        Handles every fast-plate-ocr output shape:
+          * >= 1.1: list of PlatePrediction(plate=..., char_probs=...)
+          * 1.0:    (plates, confidences) tuple with return_confidence=True
+          * 0.x:    list/str of plates (no confidences)
+        (Verified via `make anpr-smoke` — 1.1.0 returns PlatePrediction, and
+        naively unpacking it silently killed every read.)
+        """
         try:
             try:
-                plates, confidences = self._ocr.run(crop, return_confidence=True)
+                output = self._ocr.run(crop, return_confidence=True)
             except TypeError:
                 # Older fast-plate-ocr without return_confidence support.
-                plates, confidences = self._ocr.run(crop), None
+                output = self._ocr.run(crop)
         except Exception:
             return None, None
 
-        if plates is None or len(plates) == 0:
+        raw, confidence = None, None
+        if isinstance(output, tuple) and len(output) == 2:
+            plates, confidences = output
+            if plates is not None and len(plates) > 0:
+                raw = plates[0] if isinstance(plates, (list, tuple)) else plates
+                if confidences is not None:
+                    try:
+                        per_char = np.asarray(confidences, dtype=np.float32)
+                        confidence = float(per_char.reshape(per_char.shape[0], -1)[0].mean())
+                    except Exception:
+                        confidence = None
+        elif isinstance(output, (list, tuple)) and len(output) > 0:
+            first = output[0]
+            if hasattr(first, "plate"):  # fast-plate-ocr >= 1.1 PlatePrediction
+                raw = first.plate
+                probs = getattr(first, "char_probs", None)
+                if probs is not None:
+                    try:
+                        confidence = float(np.asarray(probs, dtype=np.float32).mean())
+                    except Exception:
+                        confidence = None
+            else:
+                raw = first
+        elif isinstance(output, str):
+            raw = output
+
+        if raw is None:
             return None, None
-        raw = plates[0] if isinstance(plates, (list, tuple)) else plates
         # Strip the recognizer's '_' padding and any non-alphanumerics; the
         # backend applies the canonical normalization (app/matching.py).
         plate = "".join(ch for ch in str(raw).upper() if ch.isalnum())
         if len(plate) < self.min_plate_len:
             return None, None
-
-        confidence = None
-        if confidences is not None:
-            try:
-                per_char = np.asarray(confidences, dtype=np.float32)
-                confidence = float(per_char.reshape(per_char.shape[0], -1)[0].mean())
-            except Exception:
-                confidence = None
-            if confidence is not None and confidence < self.min_plate_confidence:
-                return None, None
+        if confidence is not None and confidence < self.min_plate_confidence:
+            return None, None
         return plate, confidence
 
     def _should_emit(self, plate: str, pts_ms: float) -> bool:
