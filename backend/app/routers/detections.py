@@ -9,8 +9,62 @@ from ..matching import find_watchlist_match, normalize
 from ..models import Alert, Camera, Detection, WatchlistEntry
 from ..schemas import DetectionCreate, DetectionOut, alert_to_dict, as_naive_utc, iso_z
 from ..ws import manager
+from .routes import (
+    MAX_SPEED_KMH,
+    MAX_SPEED_SHORT_GAP_KMH,
+    SAME_LOCATION_KM,
+    SHORT_GAP_S,
+    haversine_km,
+)
 
 router = APIRouter(prefix="/detections", tags=["detections"])
+
+_MIN_DT_S = 0.1  # divide-by-zero guard (same as the route physics filter)
+
+
+def _alert_plausibility(
+    db: Session, camera: Camera, plate: str, captured_at, exclude_detection_id: int
+) -> tuple[str | None, str | None]:
+    """Physics sanity check at ALERT time, using the exact thresholds of the
+    route physics filter (routes.py): implied speed from the plate's most
+    recent prior sighting with coordinates to this one.
+
+    Recall-first by design — nothing is suppressed. 'suspect' just means the
+    alerts feed and the route view already agree: this sighting implies a
+    physically impossible hop and the route engine will reject it.
+    Returns (plausibility, reason): ('confirmed'|'suspect'|None, str|None).
+    """
+    if camera.lat is None or camera.lon is None:
+        return None, None  # cannot be physics-checked
+    prior = (
+        db.query(Detection, Camera)
+        .join(Camera, Detection.camera_id == Camera.id)
+        .filter(
+            Detection.plate == plate,
+            Detection.id != exclude_detection_id,
+            Detection.captured_at <= captured_at,
+            Camera.lat.isnot(None),
+            Camera.lon.isnot(None),
+        )
+        .order_by(Detection.captured_at.desc(), Detection.id.desc())
+        .first()
+    )
+    if prior is None:
+        return None, None  # first sighting: nothing to check against
+    prior_detection, prior_camera = prior
+    leg_km = haversine_km(prior_camera.lat, prior_camera.lon, camera.lat, camera.lon)
+    if leg_km <= SAME_LOCATION_KM:
+        return "confirmed", None
+    dt_s = (captured_at - prior_detection.captured_at).total_seconds()
+    implied_kmh = (leg_km / max(dt_s, _MIN_DT_S)) * 3600.0
+    threshold = MAX_SPEED_SHORT_GAP_KMH if dt_s < SHORT_GAP_S else MAX_SPEED_KMH
+    if implied_kmh > threshold:
+        return "suspect", (
+            f"implied speed {implied_kmh:.0f} km/h over {leg_km:.1f} km in {dt_s:.0f}s "
+            f"from previous sighting at {prior_camera.name} — physically implausible; "
+            f"likely false ANPR match (route physics filter will adjudicate)"
+        )
+    return "confirmed", None
 
 
 def _resolve_camera(db: Session, payload: DetectionCreate) -> Camera:
@@ -68,6 +122,9 @@ async def create_detection(payload: DetectionCreate, db: Session = Depends(get_d
         entries = db.query(WatchlistEntry).filter(WatchlistEntry.active.is_(True)).all()
         entry, match_type, match_confidence = find_watchlist_match(plate, entries)
         if entry is not None:
+            plausibility, plausibility_reason = _alert_plausibility(
+                db, camera, plate, detection.captured_at, detection.id
+            )
             alert = Alert(
                 detection_id=detection.id,
                 watchlist_id=entry.id,
@@ -76,6 +133,8 @@ async def create_detection(payload: DetectionCreate, db: Session = Depends(get_d
                 match_type=match_type,
                 match_confidence=match_confidence,
                 matched_from=payload.plate,
+                plausibility=plausibility,
+                plausibility_reason=plausibility_reason,
                 status="new",
             )
             db.add(alert)

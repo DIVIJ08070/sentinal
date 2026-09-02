@@ -102,6 +102,11 @@ class Alert(Base):
     # raw plate read that produced the match (never silently merged).
     match_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     matched_from: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Physics plausibility at alert time (recall-first: the alert still fires;
+    # 'suspect' means the sighting implies an impossible speed from the plate's
+    # previous sighting — the route view's physics filter adjudicates fully).
+    plausibility: Mapped[str | None] = mapped_column(String(16), nullable=True)  # confirmed|suspect|null
+    plausibility_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)  # new|acknowledged
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -109,3 +114,22 @@ class Alert(Base):
     detection: Mapped["Detection"] = relationship("Detection")
     watchlist_entry: Mapped["WatchlistEntry"] = relationship("WatchlistEntry")
     camera: Mapped["Camera"] = relationship("Camera")
+
+
+class AuditLog(Base):
+    """Append-only audit trail (who / what / when / params).
+
+    Written by app/audit.py on every route query, watchlist change, alert
+    acknowledgment, and dossier export. There is no UPDATE or DELETE path for
+    this table anywhere in the codebase — rows are only ever inserted, and the
+    dossier cites its own export entry so query provenance is verifiable.
+    """
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    action: Mapped[str] = mapped_column(String(48), index=True)  # e.g. route_query|dossier_export|alert_ack|watchlist_create
+    actor: Mapped[str] = mapped_column(String(128), index=True)  # operator identity (X-Operator header or SENTINEL_OPERATOR)
+    plate: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # id of the touched row, when applicable
+    params: Mapped[str | None] = mapped_column(Text, nullable=True)  # canonical JSON of request parameters
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)

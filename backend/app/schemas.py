@@ -184,6 +184,8 @@ def alert_to_dict(alert) -> dict:
         "match_type": alert.match_type,
         "match_confidence": alert.match_confidence,
         "matched_from": alert.matched_from,
+        "plausibility": alert.plausibility,
+        "plausibility_reason": alert.plausibility_reason,
         "status": alert.status,
         "created_at": iso_z(alert.created_at),
         "acknowledged_at": iso_z(alert.acknowledged_at),

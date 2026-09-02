@@ -139,7 +139,25 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
                     : ''}
                 </span>
               )}
+              {a.plausibility === 'suspect' && (
+                <span
+                  className="badge physics-suspect"
+                  title={
+                    a.plausibility_reason ||
+                    'Implied speed from the previous sighting is physically implausible'
+                  }
+                >
+                  &#9888; physics-suspect
+                </span>
+              )}
             </div>
+
+            {a.plausibility === 'suspect' && a.plausibility_reason && (
+              <div className="plausibility-note">
+                {a.plausibility_reason} — recall-first: alert kept, the route
+                view adjudicates.
+              </div>
+            )}
 
             {a.match_type === 'fuzzy' && a.matched_from && (
               <div className="match-note">
