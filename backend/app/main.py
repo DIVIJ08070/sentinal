@@ -8,7 +8,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import Base, engine
-from .routers import alerts, cameras, detections, dossier, health, routes, stats, watchlist
+from .routers import alerts, audit_log, cameras, detections, dossier, health, routes, stats, watchlist
 from .ws import manager
 
 
@@ -40,6 +40,7 @@ def create_app() -> FastAPI:
         alerts.router,
         routes.router,
         dossier.router,
+        audit_log.router,
         health.router,
         stats.router,
     ):

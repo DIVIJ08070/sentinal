@@ -24,18 +24,19 @@ import io
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
+from ..audit import audit_to_dict, record as audit_record, resolve_operator
 from ..db import get_db
 from ..matching import find_watchlist_match, normalize
-from ..models import WatchlistEntry, utcnow
+from ..models import AuditLog, WatchlistEntry, utcnow
 from ..schemas import iso_z
 from .routes import build_route_payload
 
 router = APIRouter(tags=["dossier"])
 
-OPERATOR = "demo-operator"
+AUDIT_ROWS_CITED = 8  # most recent audit rows for this plate cited in the export
 HASH_ALGORITHM = "sha256"
 CUSTODY_STATEMENT = (
     "CHAIN OF CUSTODY: Every sighting row above is sealed into a SHA-256 hash "
@@ -62,9 +63,31 @@ def build_dossier(
     plate: str,
     since: datetime | None = None,
     until: datetime | None = None,
+    operator: str | None = None,
+    export_format: str = "json",
 ) -> dict:
     route = build_route_payload(db, plate, since, until)
     generated_at = iso_z(utcnow())
+    operator = operator or resolve_operator(None)
+
+    # The export itself is an audited action — recorded FIRST so the dossier
+    # can cite its own entry ("this export is entry N of the audit log").
+    export_entry = audit_record(
+        db, "dossier_export", operator, plate=route["plate"],
+        format=export_format,
+        since=iso_z(since) if since else None,
+        until=iso_z(until) if until else None,
+        sightings=route["stats"]["sightings_count"],
+        rejected=route["stats"]["rejected_count"],
+    )
+    audit_total = db.query(AuditLog).count()
+    recent_rows = (
+        db.query(AuditLog)
+        .filter(AuditLog.plate == route["plate"])
+        .order_by(AuditLog.id.desc())
+        .limit(AUDIT_ROWS_CITED)
+        .all()
+    )
 
     entries = db.query(WatchlistEntry).filter(WatchlistEntry.active.is_(True)).all()
     entry, match_type, match_confidence = find_watchlist_match(route["plate"], entries)
@@ -80,7 +103,7 @@ def build_dossier(
             "match_confidence": match_confidence,
         }
 
-    metadata = {"plate": route["plate"], "generated_at": generated_at, "operator": OPERATOR}
+    metadata = {"plate": route["plate"], "generated_at": generated_at, "operator": operator}
     genesis_hash = _sha256_hex(_canonical_json(metadata))
 
     sightings = []
@@ -121,6 +144,16 @@ def build_dossier(
         **metadata,
         "watchlist": watchlist,
         "stats": route["stats"],
+        "audit": {
+            "export_entry_id": export_entry.id,
+            "log_entries_at_export": audit_total,
+            "statement": (
+                f"This export is entry {export_entry.id} of the append-only "
+                f"audit log ({audit_total} entries at generation time). "
+                f"Query provenance: GET /api/audit?plate={route['plate']}"
+            ),
+            "recent_for_plate": [audit_to_dict(row) for row in recent_rows],
+        },
         "sightings": sightings,
         "hash_chain": {
             "algorithm": HASH_ALGORITHM,
@@ -278,6 +311,31 @@ def _render_pdf(dossier: dict) -> bytes:
     pdf.set_text_color(20, 20, 20)
     pdf.ln(2)
 
+    # -- Query audit trail ----------------------------------------------------
+    audit = dossier.get("audit")
+    if audit:
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(0, 6, "QUERY AUDIT TRAIL (append-only)", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 8)
+        pdf.multi_cell(0, 4.2, _txt(audit["statement"]), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.set_fill_color(230, 230, 230)
+        audit_widths = (12, 34, 30, 30, 84)
+        for width, header in zip(audit_widths, ("entry", "when (UTC)", "actor", "action", "parameters")):
+            pdf.cell(width, 5, header, border=1, fill=True)
+        pdf.ln()
+        pdf.set_font("Helvetica", "", 7)
+        for row in reversed(audit["recent_for_plate"]):
+            params = _canonical_json(row["params"]) if row["params"] else "-"
+            cells = (
+                f"#{row['id']}", row["created_at"] or "-", _fit(row["actor"], 24),
+                _fit(row["action"], 24), _fit(params, 62),
+            )
+            for width, cell in zip(audit_widths, cells):
+                pdf.cell(width, 4.5, _txt(cell), border=1)
+            pdf.ln()
+        pdf.ln(2)
+
     # -- Snapshot appendix ---------------------------------------------------
     with_snapshots = [r for r in dossier["sightings"] if r["snapshot_b64"]]
     if with_snapshots:
@@ -327,22 +385,24 @@ def _render_pdf(dossier: dict) -> bytes:
 @router.get("/vehicles/{plate}/dossier.json")
 def dossier_json(
     plate: str,
+    request: Request,
     since: datetime | None = None,
     until: datetime | None = None,
     db: Session = Depends(get_db),
 ):
     """Timestamped movement report incl. the full hash chain (machine-verifiable)."""
-    return build_dossier(db, plate, since, until)
+    return build_dossier(db, plate, since, until, resolve_operator(request), "json")
 
 
 @router.get("/vehicles/{plate}/dossier.pdf")
 def dossier_pdf(
     plate: str,
+    request: Request,
     since: datetime | None = None,
     until: datetime | None = None,
     db: Session = Depends(get_db),
 ):
-    dossier = build_dossier(db, plate, since, until)
+    dossier = build_dossier(db, plate, since, until, resolve_operator(request), "pdf")
     content = _render_pdf(dossier)
     filename = f"dossier-{normalize(plate) or 'unknown'}.pdf"
     return Response(
