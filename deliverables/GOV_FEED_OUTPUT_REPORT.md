@@ -2,6 +2,9 @@
 
 **Platform:** SENTINEL — Gujarat CCTV Hackathon 2026 prototype
 
+**Submitted by:** Divij Patel — Individual participant (Category 1) ·
+vatsunp11@gmail.com
+
 ## What was onboarded, and how
 
 The full government sandbox grid (30 heterogeneous cameras, mixed H.264/H.265, mixed resolutions) was onboarded through the platform's catalogue sync: the backend fetched the gateway catalogue (`GET /api/ingest`) via `POST /api/cameras/sync` and registered every camera with its GIS coordinates, codec, and stream URLs. Live analysis consumed each feed over **RTSP forced over TCP** (`rtsp://103.250.160.189:8554/stream/<id>`), at most 4 concurrent captures (gateway pacing rule), with **all timestamps derived from stream PTS** anchored once per connection to the wall clock — never from arrival time or a declared frame rate. Detection pipeline: YOLOv8n vehicle detection → dedicated plate localization (open-image-models, `yolo-v9-t-384-license-plate-end2end`) → fast-plate-ocr plate reading, CPU-only.

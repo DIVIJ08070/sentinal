@@ -10,6 +10,9 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
   const [error, setError] = useState(null);
   const [flashIds, setFlashIds] = useState(() => new Set());
   const [lastDetection, setLastDetection] = useState(null);
+  // 'all' | 'new' — lets an operator hide already-acknowledged alerts (e.g.
+  // older demo alerts) so the feed shows only what still needs attention.
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +102,31 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
 
       {error && <div className="error-note">{error}</div>}
 
+      {alerts.length > 0 && (
+        <div className="alert-filter">
+          {['all', 'new'].map((f) => (
+            <button
+              key={f}
+              className={`btn btn-ghost btn-small${
+                statusFilter === f ? ' filter-active' : ''
+              }`}
+              onClick={() => setStatusFilter(f)}
+            >
+              {f === 'all' ? `All (${alerts.length})` : `New (${alerts.filter((a) => a.status === 'new').length})`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {loaded && alerts.length > 0 &&
+        statusFilter === 'new' &&
+        alerts.every((a) => a.status !== 'new') && (
+          <div className="empty-state">
+            <h3>No new alerts</h3>
+            <p>Every alert has been acknowledged. New ones appear here in real time.</p>
+          </div>
+        )}
+
       {loaded && alerts.length === 0 && (
         <div className="empty-state">
           <h3>No alerts yet</h3>
@@ -110,7 +138,10 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
         </div>
       )}
 
-      {alerts.map((a) => {
+      {(statusFilter === 'new'
+        ? alerts.filter((a) => a.status === 'new')
+        : alerts
+      ).map((a) => {
         const wl = a.watchlist || {};
         const cam = a.camera || {};
         const det = a.detection || {};

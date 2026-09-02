@@ -9,9 +9,17 @@ Toolchain (debugged ahead of submission day, per the battle plan):
      sane page-break rules).
 
 Run:  .venv/bin/python scripts/export-hld-pdf.py
+      .venv/bin/python scripts/export-hld-pdf.py --src <file.md> --out <file.pdf> --title "..."
 Network is needed only ONCE, to cache the pinned mermaid UMD build into
 scripts/vendor/ (gitignored); afterwards the export is fully offline.
+
+The HTML <title> is set explicitly because headless Chrome copies it into
+the PDF's Title metadata — without it the PDF is titled after the temp
+file (e.g. "tmpkta36xn9.html"), which looks sloppy to anyone inspecting
+document properties.
 """
+import argparse
+import html as html_mod
 import pathlib
 import re
 import subprocess
@@ -22,6 +30,7 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "docs" / "HLD.md"
 OUT = ROOT / "docs" / "HLD.pdf"
+TITLE = "SENTINEL — High-Level Design — Gujarat Police CCTV Hackathon 2026 (Divij Patel)"
 
 # v10.9.x is the last UMD (single-file <script>) build published on cdnjs;
 # mermaid 11 ships ESM-only there, which headless print can't take inline.
@@ -79,7 +88,7 @@ def mermaid_js() -> str:
     return MERMAID_CACHE.read_text(encoding="utf-8")
 
 
-def render_html(md_text: str) -> str:
+def render_html(md_text: str, title: str) -> str:
     import markdown
 
     # Pull mermaid fences out before markdown processing, restore after.
@@ -96,6 +105,8 @@ def render_html(md_text: str) -> str:
         body = body.replace(f"<p>MERMAIDBLOCK{i}MERMAIDBLOCK</p>", pre)
         body = body.replace(f"MERMAIDBLOCK{i}MERMAIDBLOCK", pre)
     return f"""<!doctype html><html><head><meta charset="utf-8">
+<title>{html_mod.escape(title)}</title>
+<meta name="author" content="Divij Patel">
 <style>{CSS}</style>
 <script>{mermaid_js()}</script>
 </head><body>
@@ -108,22 +119,28 @@ def render_html(md_text: str) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Markdown -> PDF (mermaid rendered, real Title metadata)")
+    parser.add_argument("--src", type=pathlib.Path, default=SRC)
+    parser.add_argument("--out", type=pathlib.Path, default=OUT)
+    parser.add_argument("--title", default=TITLE)
+    args = parser.parse_args()
+
     chrome = find_chrome()
-    html = render_html(SRC.read_text(encoding="utf-8"))
+    html = render_html(args.src.read_text(encoding="utf-8"), args.title)
     with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as f:
         f.write(html)
         html_path = f.name
     cmd = [
         chrome, "--headless=new", "--disable-gpu", "--no-first-run",
         "--virtual-time-budget=15000", "--run-all-compositor-stages-before-draw",
-        "--no-pdf-header-footer", f"--print-to-pdf={OUT}", f"file://{html_path}",
+        "--no-pdf-header-footer", f"--print-to-pdf={args.out}", f"file://{html_path}",
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    if not OUT.exists() or OUT.stat().st_size < 20_000:
+    if not args.out.exists() or args.out.stat().st_size < 20_000:
         print(result.stderr[-2000:])
-        sys.exit(f"ERROR: PDF export failed or suspiciously small ({OUT}).")
-    print(f"OK: {OUT} ({OUT.stat().st_size / 1024:.0f} KB) — verify the mermaid "
-          f"diagrams rendered (open it) before submission.")
+        sys.exit(f"ERROR: PDF export failed or suspiciously small ({args.out}).")
+    print(f"OK: {args.out} ({args.out.stat().st_size / 1024:.0f} KB) — verify the "
+          f"diagrams/tables rendered (open it) before submission.")
     return 0
 
 

@@ -79,7 +79,7 @@ def para(tf, runs, size=12, color=BODY, bold=False, align=PP_ALIGN.LEFT,
 
 def footer(s, n):
     tf = box(s, 0.55, 7.08, 8.0, 0.3)
-    para(tf, "SENTINEL — Gujarat Police CCTV Hackathon 2026", size=9, color=MUT, first=True)
+    para(tf, "SENTINEL — Divij Patel (Individual, Category 1) — Gujarat Police CCTV Hackathon 2026", size=9, color=MUT, first=True)
     tf2 = box(s, 11.6, 7.08, 1.18, 0.3)
     para(tf2, f"{n} / 12", size=9, color=MUT, align=PP_ALIGN.RIGHT, first=True)
 
@@ -146,15 +146,19 @@ tf = box(s, 0.75, 3.52, 11.8, 0.3)
 para(tf, [("PROPOSED MODEL:  ", {"bold": True, "color": MUT}),
           ("Hybrid — Model 1 (Registry & GIS)  +  Model 2/4 (Unified Viewing + Central AI Analytics & Watchlist Alerts)", {"color": BODY})],
      size=12.5, first=True)
-chip(s, 0.75, 4.0, 2.5, "30/30 government cameras live", color=GREEN, bold=True)
-chip(s, 3.4, 4.0, 2.9, "27 plate reads on real feeds today", color=AMBER, bold=True)
-chip(s, 6.45, 4.0, 2.9, "SHA-256 chain-of-custody dossier", color=BODY, bold=True)
-chip(s, 9.5, 4.0, 2.4, "Zero new cameras needed", color=BODY, bold=True)
-ty, tw, th = 4.72, 3.85, 2.1
+tf = box(s, 0.75, 3.82, 11.8, 0.3)
+para(tf, [("SUBMITTED BY:  ", {"bold": True, "color": MUT}),
+          ("Divij Patel — Individual participant, Category 1  ·  vatsunp11@gmail.com", {"color": BODY})],
+     size=12.5, first=True)
+chip(s, 0.75, 4.24, 2.5, "30/30 government cameras live", color=GREEN, bold=True)
+chip(s, 3.4, 4.24, 2.9, "27 plate reads on real feeds today", color=AMBER, bold=True)
+chip(s, 6.45, 4.24, 2.9, "SHA-256 chain-of-custody dossier", color=BODY, bold=True)
+chip(s, 9.5, 4.24, 2.4, "Zero new cameras needed", color=BODY, bold=True)
+ty, tw, th = 4.82, 3.85, 2.0
 for i, (img, cap) in enumerate([
         ("dashboard.png", "Live watchlist alerts — real platform, running now"),
-        ("route.png", "The test case: timestamped route on the GIS map"),
-        ("health.png", "Per-camera health — measured fps & bandwidth")]):
+        ("route.png", "The test-case UI — shown on the simulated-journey harness (slide 4)"),
+        ("health.png", "Per-camera health — fps & bandwidth per feed")]):
     x = 0.75 + i * (tw + 0.28)
     pic(s, f"{SHOTS}/{img}", x, ty, w=tw, h=th)
     tf = box(s, x, ty + th + 0.06, tw, 0.3)
@@ -229,12 +233,12 @@ s = prs.slides.add_slide(BLANK); slide_bg(s); footer(s, 4)
 header(s, "Criterion 1 — the government test case", "The plate trace, proven on the real grid — not hoped for")
 pic(s, f"{SHOTS}/route.png", 0.55, 1.62, w=7.55, h=4.13)
 tf = box(s, 0.55, 5.82, 7.55, 0.35)
-para(tf, "Route reconstruction, live on this platform: numbered timestamped sightings, GIS polyline, distance and confidence — one click from here to the sealed dossier.",
+para(tf, "The route UI on the platform's simulated-journey demo harness (snapshots watermarked SIMULATED FEED) — the same engine serves real-grid queries: e.g. 5 timestamped sightings of CMCI801 on cam23 with 4 OCR misreads fuzzy-recovered.",
      size=10, color=MUT, first=True, line=1.1)
 facts = [
     ("ONBOARDED LIVE — SEPT 2", "The full government sandbox grid via catalogue sync: 30 heterogeneous cameras — 24 H.264 + 6 HEVC, five resolutions, declared 10–30 fps. RTSP forced over TCP, max 4 concurrent captures (pacing rule).", BODY),
     ("MEASURED, NOT TRUSTED", "cam01 declares 30 fps but delivers ~12.5 fps (median PTS gap exactly 80 ms) — the integration guide's own warning, demonstrated live. All timing is PTS-anchored; never arrival time, never declared fps.", AMBER),
-    ("REAL DETECTIONS TODAY", "293 detections incl. 27 plate reads across 11 real cameras — each with a PTS-anchored UTC timestamp, snapshot and bbox, stored where GET /api/detections serves them.", GREEN),
+    ("REAL DETECTIONS TODAY", "293 detections on 11 real cameras, incl. 27 plate reads on 7 of them — each with a PTS-anchored UTC timestamp, snapshot and bbox, stored where GET /api/detections serves them.", GREEN),
 ]
 fy = 1.62
 for t, b, tc in facts:
@@ -293,7 +297,7 @@ s = prs.slides.add_slide(BLANK); slide_bg(s); footer(s, 6)
 header(s, "Watchlist correlation & real-time alerts", "Every detection, against every active entry — in real time")
 steps = [
     ("NORMALIZE", "One shared rule for every plate everywhere: uppercase, A–Z and 0–9 only. The watchlist and the detector can never disagree on format."),
-    ("CORRELATE", "Each detection is matched against all active watchlist entries: exact on the normalized plate, plus fuzzy — Levenshtein distance 1 or a single OCR-confusion substitution (0↔O, 1↔I, 5↔S, 8↔B, 2↔Z) — always labelled as fuzzy."),
+    ("CORRELATE", "Each detection is matched against all active watchlist entries: exact on the normalized plate, plus fuzzy via Indian-plate canonicalization + weighted edit distance over OCR-confusion pairs (0↔O, 1↔I, 5↔S, 8↔B, 6↔G, 2↔Z cost 0.25; any other edit 1.0; total ≤ 1.0 matches) — always labelled fuzzy with displayed confidence (a single confusion misread scores 0.93)."),
     ("ALERT IN UNDER A SECOND", "Matches push over WebSocket to every operator screen: audible ping, snapshot evidence card, category and priority badges, map pan to the camera."),
     ("ACKNOWLEDGE & AUDIT", "The operator's acknowledgment lands in the append-only audit log — the same log the evidence dossier cites. Nothing disappears silently."),
 ]
@@ -360,8 +364,8 @@ para(tf, "Detection metadata only: ~1–3 Kbps per camera upstream — a 650× t
      size=12, color=BODY, space_before=10, line=1.15)
 rect(s, 0.55, 5.28, 12.23, 1.3, fill=CARD2)
 tf = box(s, 0.85, 5.44, 11.7, 1.05)
-para(tf, [("Measured live, on screen: ", {"bold": True, "color": AMBER}),
-          ("the camera-health board shows both numbers for the real grid — ~2.6 Mbps per camera of video staying at the edge next to the metadata actually travelling upstream.", {})],
+para(tf, [("Shown live, on screen: ", {"bold": True, "color": AMBER}),
+          ("the camera-health board puts both numbers side by side for the real grid — per-camera video bandwidth staying at the edge next to the metadata actually travelling upstream (rows are measured in real time for every camera with a live worker attached).", {})],
      size=12, color=BODY, first=True, line=1.15)
 para(tf, "Honest scope: architecture plus measured ratios on one machine — not a deployed fleet. GPU sizing, analytics tiering and retention are stated as explicit assumptions in the HLD (§6).",
      size=11, color=MUT, space_before=6, line=1.12)
@@ -384,7 +388,7 @@ for t, b in cards:
     cy += 1.3
 pic(s, f"{SHOTS}/health_crop.png", 9.9, 1.66, w=2.42, h=5.26)
 tf = box(s, 9.9, 6.94, 2.6, 0.26)
-para(tf, "Measured live: 30/30 streams up.", size=9, color=MUT, first=True)
+para(tf, "Health board: 30/30 streams reporting.", size=9, color=MUT, first=True)
 
 # ======================= SLIDE 10 — COST + OPERATIONAL BENEFITS
 s = prs.slides.add_slide(BLANK); slide_bg(s); footer(s, 10)
@@ -428,7 +432,7 @@ crit = [
     ("7 · Completeness", "deck, HLD, two videos, timestamped report, repo — all banked early (slide 12)"),
 ]
 bonus = [
-    ("Multi-camera correlation", "physics-filtered route across 8 cameras + retro-rejection guard"),
+    ("Multi-camera correlation", "route engine w/ physics filter + retro-rejection guard (regression-tested); fuzzy recoveries proven on the real grid"),
     ("Cybersecurity / audit / RBAC", "SHA-256 dossier chain, JWT roles, append-only audit the export cites"),
     ("Edge / bandwidth efficiency", "~1–3 Kbps/cam upstream; ratio measured live on the health board"),
     ("Camera-health monitoring", "per-feed fps / frame-age / reconnects / bandwidth + drop alerts"),
@@ -487,7 +491,10 @@ for i, (t, b) in enumerate(arts):
     para(tf, t, size=12.5, color=AMBER, bold=True, align=PP_ALIGN.CENTER, first=True)
     para(tf, b, size=9, color=BODY, align=PP_ALIGN.CENTER, space_before=3, line=1.0)
 tf = box(s, 1.2, 6.1, 10.9, 0.4)
-para(tf, "SENTINEL  ·  Hybrid Model 1 + 2/4  ·  Gujarat Police CCTV Hackathon 2026", size=12, color=MUT, align=PP_ALIGN.CENTER, first=True)
+para(tf, "SENTINEL  ·  Hybrid Model 1 + 2/4  ·  Divij Patel (Individual, Category 1)  ·  Gujarat Police CCTV Hackathon 2026", size=12, color=MUT, align=PP_ALIGN.CENTER, first=True)
 
+prs.core_properties.title = "SENTINEL — Gujarat Police CCTV Hackathon 2026 Submission Deck"
+prs.core_properties.author = "Divij Patel"
+prs.core_properties.subject = "Gujarat Police CCTV Hackathon 2026 — Category 1, Individual"
 prs.save(OUT)
 print("saved", OUT, "slides:", len(prs.slides.__iter__.__self__._sldIdLst))

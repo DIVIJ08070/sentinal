@@ -30,3 +30,6 @@ npm-debug.log*
 
 # HLD PDF toolchain vendor cache (re-fetched by scripts/export-hld-pdf.py)
 scripts/vendor/
+
+# HLS relay segment cache (regenerated at runtime by ingest/hls_relay.py)
+ingest/.hls_relay/

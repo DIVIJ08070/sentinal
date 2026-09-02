@@ -2,6 +2,9 @@
 
 Gujarat Police CCTV Hackathon 2026 — submission document.
 
+**Submitted by:** Divij Patel — Individual participant (Category 1) ·
+vatsunp11@gmail.com
+
 Solution model: **Hybrid — Model 1 (Camera Registry & GIS, mandatory) +
 Model 2/4 (unified viewing, central AI analytics, watchlist alerts)**.
 

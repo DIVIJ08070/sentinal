@@ -552,6 +552,17 @@ label.field {
   text-overflow: ellipsis;
 }
 
+.alert-filter {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.alert-filter .filter-active {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
 .alert-card {
   background: var(--bg-2);
   border: 1px solid var(--border);
