@@ -17,7 +17,7 @@ Pipeline per frame:
      on vehicles YOLO missed or clipped).
   4. The plate bbox is padded ~2 px, and crops narrower than 96 px are
      upscaled with INTER_CUBIC before OCR. This exact combination was
-     validated live on the government sandbox grid (read CMMC701 off cam23).
+     validated live on the government sandbox grid (read CMMC801 off cam23).
   5. fast-plate-ocr reads the registration number.
   6. On a successful read, the result carries the bbox (JSON) and a small
      base64 JPEG snapshot of the VEHICLE crop with the plate visible (max
@@ -111,7 +111,7 @@ class AnprDetector(Detector):
         plate_conf: float = 0.25,
         # Plate crops narrower than this are INTER_CUBIC-upscaled before OCR;
         # 96 px + ~2 px bbox pad is the combination validated live on the
-        # sandbox grid (read CMMC701 off cam23).
+        # sandbox grid (read CMMC801 off cam23).
         ocr_min_plate_width: int = 96,
         plate_pad_px: int = 2,
     ):
@@ -284,7 +284,7 @@ class AnprDetector(Detector):
         Returns (padded plate crop, (x1, y1, x2, y2) in image coords).
         None when the localizer is absent, errored, or found nothing above
         plate_conf. The bbox is padded by plate_pad_px so tight boxes don't
-        clip character strokes (validated live: CMMC701 on cam23).
+        clip character strokes (validated live: CMMC801 on cam23).
         """
         if self._plate_detector is None:
             return None
@@ -312,7 +312,7 @@ class AnprDetector(Detector):
 
         Crops narrower than ocr_min_plate_width px are INTER_CUBIC-upscaled
         to that width (plate pixel size was the measured bottleneck on the
-        real grid; this exact preprocessing read CMMC701 off cam23 live).
+        real grid; this exact preprocessing read CMMC801 off cam23 live).
         """
         h, w = region.shape[:2]
         if 0 < w < self.ocr_min_plate_width:
