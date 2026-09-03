@@ -40,6 +40,14 @@ import os
 # time, and every entry point imports this module before touching cv2.
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 
+# Rule 6 in practice: FFmpeg's decoder prints "Could not find ref with POC",
+# "co located POCs unavailable" and "error while decoding MB ..." on every
+# mid-stream join, loop point and lost RTP packet. They are expected and
+# non-fatal, so keep FFmpeg at fatal-only (AV_LOG_FATAL = 8) by default; the
+# pipeline's own log lines and plate reads stay. Override for debugging with
+# e.g. OPENCV_FFMPEG_LOGLEVEL=16 (errors) or 32 (warnings).
+os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "8")
+
 import logging
 import threading
 import time
