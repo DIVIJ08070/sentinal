@@ -38,7 +38,10 @@ import os
 # Rule 1: force RTSP over TCP. This MUST run before `import cv2` anywhere in
 # the process - OpenCV's FFmpeg backend reads the variable at capture-open
 # time, and every entry point imports this module before touching cv2.
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+# ...and, like the relay, drop RTP packets the demuxer marks corrupt instead of
+# decoding them into garbage frames (the AI view otherwise shows what the
+# decoder invents after packet loss while the discard-enabled relay stays clean).
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;discardcorrupt"
 
 # Rule 6 in practice: FFmpeg's decoder prints "Could not find ref with POC",
 # "co located POCs unavailable" and "error while decoding MB ..." on every
@@ -501,20 +504,27 @@ class CaptureLoop:
     # ------------------------------------------------------------ quality
 
     @staticmethod
-    def _looks_concealed(frame, flat_fraction=CORRUPT_FLAT_FRACTION):
-        """True when the frame is mostly flat mid-grey (decoder concealment).
-
-        Evaluated on a 160x90 area-downscale (~14k pixels), so the cost is
-        negligible next to detection. Flat grey = every channel within ±6 of
-        128 — real scenes (roads included) are textured and coloured enough to
-        stay far below the threshold; night frames are dark, not grey.
-        """
+    def _looks_concealed(frame, flat_fraction=CORRUPT_FLAT_FRACTION, min_level=60):
+        """True when the frame is dominated by a flat NEUTRAL fill — what the
+        decoder emits for regions it cannot reconstruct (mid-grey ~128 on some
+        streams, near-white ~235 on others). Measured on the live grid: such
+        frames are 80-100% flat pixels, clean frames 3-12%. Genuinely dark night
+        scenes (level < min_level) are never flagged."""
         import cv2
         import numpy as np
 
-        small = cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA)
-        flat = (np.abs(small.astype(np.int16) - 128).max(axis=2) < 6).mean()
-        return bool(flat > flat_fraction)
+        h, w = frame.shape[:2]
+        small = cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA) if w > 160 else frame
+        b, g, r = small[..., 0].astype(np.int16), small[..., 1].astype(np.int16), small[..., 2].astype(np.int16)
+        neutral = (np.abs(b - g) < 6) & (np.abs(g - r) < 6)
+        if neutral.mean() < flat_fraction:
+            return False
+        level = g[neutral]
+        mode = int(np.bincount(np.clip(level, 0, 255)).argmax())
+        if mode < min_level:
+            return False  # dark scene, not concealment
+        flat = (neutral & (np.abs(g - mode) < 6)).mean()
+        return flat > flat_fraction
 
     # -------------------------------------------------------------- metrics
 
