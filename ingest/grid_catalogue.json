@@ -3,7 +3,7 @@
     {
       "id": "cam01",
       "name": "Chiman bhai Bridge, Ahmedabad",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Ahmedabad Traffic (CSITMS)",
       "location": {
         "lat": 23.058,
         "lon": 72.552
@@ -22,7 +22,7 @@
     {
       "id": "cam02",
       "name": "Janpath, Ahmedabad",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Ahmedabad Traffic (CSITMS)",
       "location": {
         "lat": 23.03,
         "lon": 72.58
@@ -41,7 +41,7 @@
     {
       "id": "cam03",
       "name": "O.N.G.C. Office, Chandkheda",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Ahmedabad Traffic (CSITMS)",
       "location": {
         "lat": 23.11,
         "lon": 72.59
@@ -60,7 +60,7 @@
     {
       "id": "cam04",
       "name": "Paldi Circle, Ahmedabad",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Ahmedabad Traffic (CSITMS)",
       "location": {
         "lat": 23.012,
         "lon": 72.56
@@ -79,7 +79,7 @@
     {
       "id": "cam05",
       "name": "Visat Teen Rasta, Chandkheda",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Ahmedabad Traffic (CSITMS)",
       "location": {
         "lat": 23.108,
         "lon": 72.586
@@ -98,7 +98,7 @@
     {
       "id": "cam06",
       "name": "Timbavadi Gate, Junagadh",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Junagadh",
       "location": {
         "lat": 21.49,
         "lon": 70.445
@@ -117,7 +117,7 @@
     {
       "id": "cam07",
       "name": "Hero Showroom, Gir Somnath",
-      "department": "Sandbox Grid",
+      "department": "Private / Commercial (viewing-only)",
       "location": {
         "lat": 20.912,
         "lon": 70.367
@@ -136,7 +136,7 @@
     {
       "id": "cam08",
       "name": "Majewadi Gate, Junagadh",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Junagadh",
       "location": {
         "lat": 21.535,
         "lon": 70.462
@@ -155,7 +155,7 @@
     {
       "id": "cam09",
       "name": "New Bypass Circle 2, Junagadh",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Junagadh",
       "location": {
         "lat": 21.52,
         "lon": 70.48
@@ -174,7 +174,7 @@
     {
       "id": "cam10",
       "name": "Char Chowk Road 2, Junagadh",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Junagadh",
       "location": {
         "lat": 21.526,
         "lon": 70.463
@@ -193,7 +193,7 @@
     {
       "id": "cam11",
       "name": "Dolatpara, Junagadh",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Junagadh",
       "location": {
         "lat": 21.552,
         "lon": 70.475
@@ -212,7 +212,7 @@
     {
       "id": "cam12",
       "name": "Tri Mandir Adalaj Tollnaka, Gandhinagar",
-      "department": "Sandbox Grid",
+      "department": "Transport / RTO",
       "location": {
         "lat": 23.164,
         "lon": 72.581
@@ -231,7 +231,7 @@
     {
       "id": "cam13",
       "name": "CN Vidhyalaya, Ambawadi Ahmedabad",
-      "department": "Sandbox Grid",
+      "department": "Education",
       "location": {
         "lat": 23.017,
         "lon": 72.554
@@ -250,7 +250,7 @@
     {
       "id": "cam14",
       "name": "Delight RLVD Junction",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Ahmedabad Traffic (CSITMS)",
       "location": {
         "lat": 23.233903,
         "lon": 72.579347
@@ -269,7 +269,7 @@
     {
       "id": "cam15",
       "name": "Suvidha Park",
-      "department": "Sandbox Grid",
+      "department": "Municipal Corporation",
       "location": {
         "lat": 23.224956,
         "lon": 72.575277
@@ -288,7 +288,7 @@
     {
       "id": "cam16",
       "name": "Visat P2, Chandkheda",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Ahmedabad Traffic (CSITMS)",
       "location": {
         "lat": 23.109,
         "lon": 72.585
@@ -307,7 +307,7 @@
     {
       "id": "cam17",
       "name": "Rajkot Bus Port CCTV",
-      "department": "Sandbox Grid",
+      "department": "GSRTC",
       "location": {
         "lat": 22.291,
         "lon": 70.793
@@ -326,7 +326,7 @@
     {
       "id": "cam18",
       "name": "Rajkot CCTV",
-      "department": "Sandbox Grid",
+      "department": "Home / Police \u2014 Rajkot",
       "location": {
         "lat": 22.303,
         "lon": 70.802
@@ -345,7 +345,7 @@
     {
       "id": "cam19",
       "name": "Khaparia Gram Panchayat, Gandevi, Navsari",
-      "department": "Sandbox Grid",
+      "department": "Panchayat & Rural Development",
       "location": {
         "lat": 20.812,
         "lon": 72.985
@@ -364,7 +364,7 @@
     {
       "id": "cam20",
       "name": "Mohanpura",
-      "department": "Sandbox Grid",
+      "department": "Municipal Corporation",
       "location": {
         "lat": 23.182158,
         "lon": 72.594745
@@ -383,7 +383,7 @@
     {
       "id": "cam21",
       "name": "cam21 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.176629,
         "lon": 72.6054
@@ -402,7 +402,7 @@
     {
       "id": "cam22",
       "name": "cam22 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.172802,
         "lon": 72.617432
@@ -421,7 +421,7 @@
     {
       "id": "cam23",
       "name": "cam23 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.170847,
         "lon": 72.630315
@@ -440,7 +440,7 @@
     {
       "id": "cam24",
       "name": "cam24 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.170847,
         "lon": 72.643485
@@ -459,7 +459,7 @@
     {
       "id": "cam25",
       "name": "cam25 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.172802,
         "lon": 72.656368
@@ -478,7 +478,7 @@
     {
       "id": "cam26",
       "name": "cam26 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.176629,
         "lon": 72.6684
@@ -497,7 +497,7 @@
     {
       "id": "cam27",
       "name": "cam27 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.182158,
         "lon": 72.679055
@@ -516,7 +516,7 @@
     {
       "id": "cam28",
       "name": "cam28 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.18915,
         "lon": 72.687868
@@ -535,7 +535,7 @@
     {
       "id": "cam29",
       "name": "cam29 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.197297,
         "lon": 72.694453
@@ -554,7 +554,7 @@
     {
       "id": "cam30",
       "name": "cam30 [sandbox]",
-      "department": "Sandbox Grid",
+      "department": "Unassigned \u2014 awaiting department metadata",
       "location": {
         "lat": 23.206244,
         "lon": 72.698523
@@ -572,5 +572,6 @@
     }
   ],
   "_source": "rtsp-probe",
-  "_names_source": "portal screenshot 2026-09-02; coords approximate landmark-level"
+  "_names_source": "portal screenshot 2026-09-02; coords approximate landmark-level",
+  "_departments_note": "departments inferred from camera names/locations (sandbox catalogue has no department field)"
 }
