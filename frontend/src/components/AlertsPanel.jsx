@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, formatLocal, formatTime, snapshotSrc } from '../api.js';
+import { groupAlerts } from '../vehicleGroups.js';
 import { useAlertsSocket } from '../ws.js';
 
 const FLASH_MS = 3000;
@@ -13,6 +14,16 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
   // 'all' | 'new' — lets an operator hide already-acknowledged alerts (e.g.
   // older demo alerts) so the feed shows only what still needs attention.
   const [statusFilter, setStatusFilter] = useState('all');
+  // Vehicle threads: one card per vehicle (latest sighting on top); a thread
+  // with several sightings expands on click to show the earlier ones.
+  const [expanded, setExpanded] = useState(() => new Set());
+  const toggleThread = (key) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +92,16 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
     }
   };
 
+  // Acknowledge every still-new alert of a vehicle thread in one click.
+  const ackThread = async (thread) => {
+    for (const a of thread.alerts) {
+      if (a.status === 'new') await ack(a.id);
+    }
+  };
+
+  const visibleAlerts = statusFilter === 'new' ? alerts.filter((a) => a.status === 'new') : alerts;
+  const threads = useMemo(() => groupAlerts(visibleAlerts), [visibleAlerts]);
+
   return (
     <div>
       <div className="panel-title">
@@ -138,20 +159,20 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
         </div>
       )}
 
-      {(statusFilter === 'new'
-        ? alerts.filter((a) => a.status === 'new')
-        : alerts
-      ).map((a) => {
+      {threads.map((thread) => {
+        const a = thread.latest;
         const wl = a.watchlist || {};
         const cam = a.camera || {};
         const det = a.detection || {};
         const shot = snapshotSrc(det.snapshot_b64);
         const when = det.captured_at || a.created_at;
+        const isOpen = expanded.has(thread.key);
+        const flashing = thread.ids.some((id) => flashIds.has(id));
         return (
           <div
-            key={a.id}
-            className={`alert-card${flashIds.has(a.id) ? ' flash' : ''}${
-              a.status === 'acknowledged' ? ' acked' : ''
+            key={thread.key}
+            className={`alert-card${flashing ? ' flash' : ''}${
+              !thread.hasNew ? ' acked' : ''
             }`}
           >
             <div className="alert-head">
@@ -162,6 +183,17 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
               <span className={`badge pri-${wl.priority || 'low'}`}>
                 {wl.priority || 'low'}
               </span>
+              {thread.count > 1 && (
+                <button
+                  type="button"
+                  className={`badge thread-badge${isOpen ? ' open' : ''}`}
+                  onClick={() => toggleThread(thread.key)}
+                  title="Same vehicle: OCR variants within one pass and returns on later passes are threaded together — click to see every sighting"
+                >
+                  {thread.count} sightings · {thread.passes} pass{thread.passes === 1 ? '' : 'es'}{' '}
+                  {isOpen ? '▴' : '▾'}
+                </button>
+              )}
               {a.match_type === 'fuzzy' && (
                 <span className="badge fuzzy">
                   fuzzy
@@ -212,9 +244,9 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
             )}
 
             <div className="alert-actions">
-              {a.status === 'new' ? (
-                <button className="btn btn-amber btn-small" onClick={() => ack(a.id)}>
-                  Acknowledge
+              {thread.hasNew ? (
+                <button className="btn btn-amber btn-small" onClick={() => ackThread(thread)}>
+                  Acknowledge{thread.count > 1 ? ` (${thread.alerts.filter((x) => x.status === 'new').length})` : ''}
                 </button>
               ) : (
                 <span className="acked-tag">Acknowledged</span>
@@ -228,6 +260,48 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
                 </button>
               )}
             </div>
+
+            {isOpen && thread.count > 1 && (
+              <div className="thread-list">
+                <div className="thread-list-title">
+                  All sightings of this vehicle — newest first
+                </div>
+                {thread.alerts.map((s) => {
+                  const sdet = s.detection || {};
+                  const sshot = snapshotSrc(sdet.snapshot_b64);
+                  const swhen = sdet.captured_at || s.created_at;
+                  const conf = sdet.plate_confidence != null ? sdet.plate_confidence : s.match_confidence;
+                  return (
+                    <div key={s.id} className={`thread-row${s.status === 'acknowledged' ? ' acked' : ''}`}>
+                      {sshot ? (
+                        <img className="thread-thumb" src={sshot} alt={`Sighting ${s.plate}`} />
+                      ) : (
+                        <div className="thread-thumb empty" />
+                      )}
+                      <div className="thread-info">
+                        <div>
+                          <span className="plate-sm">{s.plate}</span>
+                          {s.match_type === 'fuzzy' && <span className="badge fuzzy">fuzzy</span>}
+                          {conf != null && (
+                            <span className="thread-conf">{Math.round(conf * 100)}%</span>
+                          )}
+                        </div>
+                        <div className="thread-when" title={swhen}>
+                          {(s.camera || {}).name || `Camera #${s.camera_id}`} · {formatLocal(swhen)}
+                        </div>
+                      </div>
+                      {s.status === 'new' ? (
+                        <button className="btn btn-ghost btn-small" onClick={() => ack(s.id)}>
+                          Ack
+                        </button>
+                      ) : (
+                        <span className="acked-tag">acked</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })}

@@ -145,3 +145,15 @@ sighting is correlated, and here they come — each with the frame the camera ca
 
 Do this beat ONCE per take (history is consumed once it's alerted); live alerts keep firing after
 it as vehicles loop back (~12.6 min on cam06).
+
+---
+
+## 9. Alert threads — one card per vehicle
+
+ALERTS now shows **one card per vehicle** (latest sighting on top). OCR variants read within
+seconds on the same camera, and the vehicle's returns on later passes, are threaded into that
+card with a badge like **"9 sightings · 3 passes ▾"** — click it to expand every sighting
+(thumbnail, time, confidence, exact/fuzzy). *Acknowledge* clears the whole thread.
+Narration: *"One vehicle, nine reads across three passes — the platform threads them into a single
+case, and every read keeps its own frame as evidence."* Grouping is a view: the audit trail still
+holds every individual alert.
