@@ -116,3 +116,16 @@ MODE=normal GRID_EMAIL=you@example.com scripts/live-with-auth.sh   # cam06 + cam
 ```
 Tip: a single camera also frees a lot of CPU (four live ANPR streams load a 12-core Mac heavily),
 so the AI view runs smoother in `video` mode.
+
+---
+
+## 7. Genuine-only mode (simulator data hidden)
+
+The backend now hides simulator/mock-sourced detections, alerts, routes and stats by default
+(`SENTINEL_HIDE_DETECTORS="simulator,mock"`; set it to "" to show the scripted demo journey again).
+Nothing is deleted — it is a view filter. Consequences for the take:
+- ALERTS shows only live alerts, each with the real vehicle crop from the camera frame.
+- For the ROUTE beat use a plate that was read live (e.g. the one that just alerted): it shows every
+  pass of that vehicle on its camera, ~12.6 min apart on cam06 — say on camera that looped sandbox
+  footage cannot host a cross-camera journey; the same engine reconstructs one on the evaluation grid.
+- `scripts/demo.sh` / `ingest/simulator.py` are no longer needed for the live demo.

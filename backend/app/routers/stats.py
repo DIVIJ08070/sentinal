@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Alert, Camera, Detection, WatchlistEntry, utcnow
+from ..sources import visible_detection
 
 router = APIRouter(tags=["stats"])
 
@@ -41,16 +42,29 @@ def get_stats(db: Session = Depends(get_db)):
         "watchlist_active": db.query(func.count(WatchlistEntry.id))
         .filter(WatchlistEntry.active.is_(True))
         .scalar() or 0,
+        # All detection/alert figures exclude hidden sources (simulator/mock).
         "detections_24h": db.query(func.count(Detection.id))
+        .filter(visible_detection())
         .filter(Detection.captured_at >= utcnow() - timedelta(hours=24))
         .scalar() or 0,
         "alerts_new": db.query(func.count(Alert.id))
-        .filter(Alert.status == "new")
+        .join(Detection, Alert.detection_id == Detection.id)
+        .filter(visible_detection(), Alert.status == "new")
         .scalar() or 0,
-        "alerts_total": db.query(func.count(Alert.id)).scalar() or 0,
+        "alerts_total": db.query(func.count(Alert.id))
+        .join(Detection, Alert.detection_id == Detection.id)
+        .filter(visible_detection())
+        .scalar() or 0,
         # Liveness heartbeat for the dashboard: when the pipeline last delivered
         # a detection / raised an alert (server receive time, so it reflects
         # "is data arriving now", independent of stream PTS).
-        "last_detection_at": _iso(db.query(func.max(Detection.created_at)).scalar()),
-        "last_alert_at": _iso(db.query(func.max(Alert.created_at)).scalar()),
+        "last_detection_at": _iso(
+            db.query(func.max(Detection.created_at)).filter(visible_detection()).scalar()
+        ),
+        "last_alert_at": _iso(
+            db.query(func.max(Alert.created_at))
+            .join(Detection, Alert.detection_id == Detection.id)
+            .filter(visible_detection())
+            .scalar()
+        ),
     }

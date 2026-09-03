@@ -8,6 +8,7 @@ from ..db import get_db
 from ..matching import canonicalize, find_watchlist_match, normalize
 from ..models import Alert, Camera, Detection, WatchlistEntry
 from ..schemas import DetectionCreate, DetectionOut, alert_to_dict, as_naive_utc, iso_z
+from ..sources import visible_detection
 from ..ws import manager
 from .routes import (
     MAX_SPEED_KMH,
@@ -177,7 +178,7 @@ def list_detections(
     limit: int = Query(default=200, ge=1, le=1000),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Detection)
+    query = db.query(Detection).filter(visible_detection())  # hide simulator/mock rows
     if plate:
         query = query.filter(Detection.plate == normalize(plate))
     if camera_id is not None:

@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session, joinedload
 from ..audit import record as audit_record, resolve_operator
 from ..auth import require_role
 from ..db import get_db
-from ..models import Alert, utcnow
+from ..models import Alert, Detection, utcnow
 from ..schemas import alert_to_dict
+from ..sources import visible_detection
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -16,10 +17,15 @@ def list_alerts(
     limit: int = Query(default=100, ge=1, le=1000),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Alert).options(
-        joinedload(Alert.camera),
-        joinedload(Alert.watchlist_entry),
-        joinedload(Alert.detection),
+    query = (
+        db.query(Alert)
+        .join(Detection, Alert.detection_id == Detection.id)
+        .filter(visible_detection())  # hide simulator/mock-sourced alerts
+        .options(
+            joinedload(Alert.camera),
+            joinedload(Alert.watchlist_entry),
+            joinedload(Alert.detection),
+        )
     )
     if status:
         query = query.filter(Alert.status == status)
