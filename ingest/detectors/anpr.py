@@ -33,6 +33,7 @@ and plate-localizer models are fetched on first use, then cached.
 import base64
 import json
 import os
+import re
 from typing import Any, List, Optional, Tuple
 
 # Gateway rule 1: the RTSP transport option must exist before cv2's FIRST
@@ -114,6 +115,19 @@ class AnprDetector(Detector):
         # sandbox grid (read CMMC801 off cam23).
         ocr_min_plate_width: int = 96,
         plate_pad_px: int = 2,
+        # Structural gate on OCR output. The live sandbox grid taught us the
+        # localizer will happily "find" a camera's burned-in caption
+        # ("Camera 01") and OCR it into plate-shaped junk (CMEP801, C0MC01,
+        # 4MB8801...). Indian registrations start with a two-letter state
+        # code followed by a digit; requiring that prefix (6-10 chars, >=3
+        # digits) rejected every observed caption read while keeping every
+        # genuine one (GJ1104284, GJ19PE8859, GJ01AB1234). Pass "" to disable
+        # (e.g. non-Indian plates).
+        plate_pattern: str = r"^[A-Z]{2}\d[A-Z0-9]{3,7}$",
+        # Running the localizer over the WHOLE frame when no vehicle crop
+        # produced a plate is precisely the path that read the caption:
+        # opt-in only.
+        full_frame_fallback: bool = False,
     ):
         self.vehicle_conf = float(vehicle_conf)
         self.min_plate_len = int(min_plate_len)
@@ -125,6 +139,8 @@ class AnprDetector(Detector):
         self.plate_conf = float(plate_conf)
         self.ocr_min_plate_width = int(ocr_min_plate_width)
         self.plate_pad_px = int(plate_pad_px)
+        self._plate_re = re.compile(plate_pattern) if plate_pattern else None
+        self.full_frame_fallback = bool(full_frame_fallback)
 
         # One model instance per detector; the worker creates one detector per
         # camera thread, keeping inference thread-confined. Batch shape is
@@ -218,7 +234,12 @@ class AnprDetector(Detector):
 
         # Full-frame fallback: no vehicle crop yielded a plate bbox — run the
         # localizer once over the whole frame (vehicles YOLO missed/clipped).
-        if not results and not localized_any and self._plate_detector is not None:
+        if (
+            self.full_frame_fallback
+            and not results
+            and not localized_any
+            and self._plate_detector is not None
+        ):
             located = self._localize_plate(frame)
             if located is not None:
                 region, (px1, py1, px2, py2) = located
@@ -375,6 +396,12 @@ class AnprDetector(Detector):
         # backend applies the canonical normalization (app/matching.py).
         plate = "".join(ch for ch in str(raw).upper() if ch.isalnum())
         if len(plate) < self.min_plate_len:
+            return None, None
+        # Structural gate (see plate_pattern): drops caption/watermark junk
+        # that is plate-shaped to the OCR but impossible as a registration.
+        if self._plate_re is not None and not self._plate_re.match(plate):
+            return None, None
+        if sum(ch.isdigit() for ch in plate) < 3:
             return None, None
         if confidence is not None and confidence < self.min_plate_confidence:
             return None, None

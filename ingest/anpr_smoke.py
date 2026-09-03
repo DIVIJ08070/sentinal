@@ -174,7 +174,15 @@ def main() -> int:
         if not ok:
             return fail(3, "could not re-read the test video")
         crop = frame[225:295, 100:280]  # plate region (frame 0 vehicle at x=60)
-        plate, conf = detector._read_plate(crop)
+        # This step checks the OCR STAGE, not the registration-format policy:
+        # the drawn font yields near-misses (e.g. G111A8134) that the format
+        # gate rightly rejects, so read with the gate bypassed here and test
+        # the gate on its own in step 6.
+        saved_re, detector._plate_re = detector._plate_re, None
+        try:
+            plate, conf = detector._read_plate(crop)
+        finally:
+            detector._plate_re = saved_re
         print(f"[5] fast-plate-ocr direct read on the synthetic crop: "
               f"plate={plate!r} confidence={conf}")
         if plate is None:
@@ -183,6 +191,21 @@ def main() -> int:
         norm_target = SMOKE_PLATE.replace("-", "")
         verdict = "exact" if plate == norm_target else "near-miss (confusion-tolerant matcher covers this)"
         print(f"    vs expected {norm_target}: {verdict}")
+
+        # -- 6. Registration-format gate (regression for the caption bug) ----
+        # On the live sandbox grid the plate localizer OCR'd a camera's
+        # burned-in caption ("Camera 01") into plate-shaped junk. The gate must
+        # reject those and keep genuine Indian registrations.
+        junk = ["CMEP801", "C0MC01", "4MB8801", "CMMC701", "CAMERA01"]
+        genuine = ["GJ1104284", "GJ01AB1234", "GJ19PE8859", "MH12AB1234"]
+        gate = lambda p: (detector._plate_re is None or detector._plate_re.match(p)) \
+            and sum(ch.isdigit() for ch in p) >= 3
+        leaked = [p for p in junk if gate(p)]
+        blocked = [p for p in genuine if not gate(p)]
+        print(f"[6] format gate: rejected {len(junk) - len(leaked)}/{len(junk)} caption junk, "
+              f"kept {len(genuine) - len(blocked)}/{len(genuine)} genuine plates")
+        if leaked or blocked:
+            return fail(4, f"format gate regression — leaked={leaked} blocked={blocked}")
         print("\nANPR SMOKE: PASS — capture->PTS anchor->YOLOv8n->OCR chain runs CPU-only.")
         print("Next: run against real streams and RECORD the per-camera read rate:")
         print("  python worker.py --detector anpr --max-cameras 4   (government grid / mediamtx)")
