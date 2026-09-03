@@ -1747,3 +1747,113 @@ label.field {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---- Vehicle-type badge (ANPR classification) --------------------------- */
+/* Small neutral badge shown on alert cards, alert thread rows and route
+   sightings when the detector supplied a vehicle_type. Absent-safe: nothing
+   renders when the field is null (older rows / mock detector). */
+.badge.vehicle {
+  background: var(--bg-3);
+  color: var(--text-dim);
+  border-color: var(--border-strong);
+  gap: 4px;
+}
+.badge.vehicle .vehicle-ico {
+  font-size: 12px;
+  line-height: 1;
+  /* keep the glyph from inflating the badge's uppercase baseline */
+  filter: saturate(0.85);
+}
+
+/* ---- Alert snapshot caption --------------------------------------------- */
+.snapshot-fig {
+  margin: 8px 0 0;
+}
+.snapshot-fig .snapshot {
+  margin-top: 0;
+}
+.snapshot-caption {
+  margin-top: 4px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+/* ---- Intercept prediction ("Predict next camera") ----------------------- */
+.predict-block {
+  margin-top: 10px;
+}
+.predict-btn {
+  width: 100%;
+  justify-content: center;
+}
+.predict-panel {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+}
+.predict-note {
+  font-size: 11px;
+  color: var(--amber);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+.predict-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 7px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+.predict-row:last-of-type {
+  border-bottom: none;
+}
+.predict-rank {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--amber-soft);
+  color: var(--amber);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  font-size: 11px;
+  font-weight: 700;
+}
+.predict-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.predict-cam {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+.predict-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.predict-mapnote,
+.predict-empty {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+.predict-mapnote {
+  margin-top: 8px;
+}
+.predict-empty {
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+}

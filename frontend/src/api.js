@@ -61,6 +61,10 @@ export const api = {
   // Detections & route reconstruction
   detections: (params) => request('/detections', { params }),
   vehicleRoute: (plate, params) => request(`/vehicles/${encodeURIComponent(plate)}/route`, { params }),
+  // Intercept prediction: heuristic next-camera forecast from a plate's recent
+  // route. GET /api/vehicles/{plate}/predict ->
+  //   { predictions: [{camera_name, distance_km, bearing_deg, eta_seconds, confidence}], reason? }
+  predictIntercept: (plate) => request(`/vehicles/${encodeURIComponent(plate)}/predict`),
 
   // Camera health & bandwidth
   healthSummary: () => request('/health/summary'),
@@ -180,4 +184,48 @@ export function formatTime(iso) {
 
 export function snapshotSrc(b64) {
   return b64 ? `data:image/jpeg;base64,${b64}` : null;
+}
+
+// ---- Vehicle-type + intercept-prediction display helpers --------------------
+// vehicle_type comes from the ANPR detector (COCO vehicle classes). Absent on
+// older rows / the mock detector — callers must treat null as "no badge".
+
+const VEHICLE_ICONS = {
+  car: '🚗',
+  truck: '🚚',
+  lorry: '🚚',
+  bus: '🚌',
+  motorbike: '🏍️',
+  motorcycle: '🏍️',
+  bike: '🏍️',
+  scooter: '🛵',
+  van: '🚐',
+  auto: '🛺',
+  rickshaw: '🛺',
+};
+
+export function vehicleIcon(type) {
+  if (!type) return null;
+  return VEHICLE_ICONS[String(type).toLowerCase()] || '🚗';
+}
+
+// eta_seconds -> a friendly "in ~4 min" / "in ~40 s" (null when not estimable).
+export function etaLabel(seconds) {
+  if (seconds == null) return null;
+  const s = Number(seconds);
+  if (!Number.isFinite(s) || s < 0) return null;
+  if (s < 60) return `in ~${Math.max(1, Math.round(s))} s`;
+  return `in ~${Math.round(s / 60)} min`;
+}
+
+const COMPASS_8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+
+// bearing_deg (0 = north, clockwise) -> "312° NW" (null when absent).
+export function bearingLabel(deg) {
+  if (deg == null) return null;
+  const d = Number(deg);
+  if (!Number.isFinite(d)) return null;
+  const norm = ((d % 360) + 360) % 360;
+  const point = COMPASS_8[Math.round(norm / 45) % 8];
+  return `${Math.round(norm)}° ${point}`;
 }

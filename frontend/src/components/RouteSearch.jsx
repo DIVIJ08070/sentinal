@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, dossierPdfUrl, formatLocal, snapshotSrc } from '../api.js';
+import {
+  api,
+  bearingLabel,
+  dossierPdfUrl,
+  etaLabel,
+  formatLocal,
+  snapshotSrc,
+  vehicleIcon,
+} from '../api.js';
 
 function pct(v) {
   return v == null ? null : `${Math.round(v * 100)}%`;
@@ -23,12 +31,24 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
   const [searchWindow, setSearchWindow] = useState({}); // {since, until} of the last search — reused for the dossier export
   const [status, setStatus] = useState('idle'); // idle | loading | done | empty | error
   const [error, setError] = useState(null);
+  // Intercept prediction (heuristic next-camera forecast). Its own local state
+  // so it never blocks the route render; reset whenever a new trace is run.
+  const [prediction, setPrediction] = useState(null); // {predictions:[...], reason?}
+  const [predictStatus, setPredictStatus] = useState('idle'); // idle | loading | done | error
+  const [predictError, setPredictError] = useState(null);
   const autoTraced = useRef(false);
+
+  const resetPrediction = () => {
+    setPrediction(null);
+    setPredictStatus('idle');
+    setPredictError(null);
+  };
 
   const runTrace = async (p) => {
     if (!p) return;
     setStatus('loading');
     setError(null);
+    resetPrediction();
     try {
       const params = {};
       if (since) params.since = new Date(since).toISOString();
@@ -74,7 +94,26 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
     setSearchWindow({});
     setStatus('idle');
     setError(null);
+    resetPrediction();
     onRoute(null);
+  };
+
+  // Predict the vehicle's next likely camera from its accepted route so far.
+  // Backend forecast is a heuristic (last-leg heading + camera geometry), not a
+  // tracked prediction — labelled as such in the UI.
+  const predictNext = async () => {
+    if (!route || !route.plate) return;
+    setPredictStatus('loading');
+    setPredictError(null);
+    try {
+      const data = await api.predictIntercept(route.plate);
+      setPrediction(data && typeof data === 'object' ? data : { predictions: [] });
+      setPredictStatus('done');
+    } catch (err) {
+      setPrediction(null);
+      setPredictError(err.message);
+      setPredictStatus('error');
+    }
   };
 
   const stats = route ? route.stats : null;
@@ -225,6 +264,86 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
             <span className="dossier-sub">SHA-256 chain-of-custody sealed</span>
           </a>
 
+          {stats.sightings_count >= 2 && (
+            <div className="predict-block">
+              <button
+                type="button"
+                className="btn btn-ghost predict-btn"
+                onClick={predictNext}
+                disabled={predictStatus === 'loading'}
+                title="Heuristic forecast of the next camera this vehicle is likely to reach, from its accepted route so far"
+              >
+                {predictStatus === 'loading' ? 'Predicting…' : 'Predict next camera'}
+              </button>
+
+              {predictStatus === 'error' && (
+                <div className="error-note">
+                  Prediction failed: {predictError}
+                </div>
+              )}
+
+              {predictStatus === 'done' && prediction && (
+                Array.isArray(prediction.predictions) &&
+                prediction.predictions.length > 0 ? (
+                  <div className="predict-panel">
+                    <div className="predict-note">
+                      Heuristic estimate — projected from the vehicle&apos;s recent
+                      heading and camera geometry, not a confirmed track.
+                    </div>
+                    {prediction.predictions.map((pr, i) => {
+                      const eta = etaLabel(pr.eta_seconds);
+                      const bearing = bearingLabel(pr.bearing_deg);
+                      return (
+                        <div
+                          className="predict-row"
+                          key={`${pr.camera_name || 'cam'}-${i}`}
+                        >
+                          <div className="predict-rank">{i + 1}</div>
+                          <div className="predict-body">
+                            <div className="predict-cam">
+                              {pr.camera_name || `Camera candidate ${i + 1}`}
+                            </div>
+                            <div className="predict-chips">
+                              {pr.distance_km != null && (
+                                <span className="leg-chip" title="Distance ahead along the projected heading">
+                                  {Number(pr.distance_km).toFixed(1)} km
+                                </span>
+                              )}
+                              {eta && (
+                                <span className="leg-chip speed" title="Estimated time of arrival">
+                                  {eta}
+                                </span>
+                              )}
+                              {bearing && (
+                                <span className="leg-chip" title="Bearing from the last sighting">
+                                  {bearing}
+                                </span>
+                              )}
+                              {pr.confidence != null && (
+                                <span className="leg-chip" title="Heuristic confidence">
+                                  {Math.round(pr.confidence * 100)}% conf
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div className="predict-mapnote">
+                      Predicted cameras are listed here only — they are not drawn
+                      on the map.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="predict-empty">
+                    {prediction.reason ||
+                      'No next-camera prediction available for this vehicle yet.'}
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -264,6 +383,17 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
                       <td>
                         <span className={rejected ? 'strike' : ''}>{p.camera_name}</span>
                         <div className="cell-sub">{p.department || ''}</div>
+                        {p.vehicle_type && (
+                          <span
+                            className="badge vehicle"
+                            title={`Vehicle type: ${p.vehicle_type}`}
+                          >
+                            <span className="vehicle-ico" aria-hidden="true">
+                              {vehicleIcon(p.vehicle_type)}
+                            </span>
+                            {p.vehicle_type}
+                          </span>
+                        )}
                         {snapshotSrc(p.snapshot_b64) && (
                           <img
                             className={`route-snap${rejected ? ' route-snap-rejected' : ''}`}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, formatLocal, formatTime, snapshotSrc } from '../api.js';
+import { api, formatLocal, formatTime, snapshotSrc, vehicleIcon } from '../api.js';
 import { groupAlerts } from '../vehicleGroups.js';
 import { useAlertsSocket } from '../ws.js';
 
@@ -183,6 +183,17 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
               <span className={`badge pri-${wl.priority || 'low'}`}>
                 {wl.priority || 'low'}
               </span>
+              {det.vehicle_type && (
+                <span
+                  className="badge vehicle"
+                  title={`Vehicle type classified by ANPR: ${det.vehicle_type}`}
+                >
+                  <span className="vehicle-ico" aria-hidden="true">
+                    {vehicleIcon(det.vehicle_type)}
+                  </span>
+                  {det.vehicle_type}
+                </span>
+              )}
               {thread.count > 1 && (
                 <button
                   type="button"
@@ -240,7 +251,14 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
             {wl.label && <div className="alert-label">{wl.label}</div>}
 
             {shot && (
-              <img className="snapshot" src={shot} alt={`Snapshot of ${a.plate}`} />
+              <figure className="snapshot-fig">
+                <img className="snapshot" src={shot} alt={`Snapshot of ${a.plate}`} />
+                {a.plate && (
+                  <figcaption className="snapshot-caption">
+                    Enhanced plate close-up
+                  </figcaption>
+                )}
+              </figure>
             )}
 
             <div className="alert-actions">
@@ -282,6 +300,17 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
                         <div>
                           <span className="plate-sm">{s.plate}</span>
                           {s.match_type === 'fuzzy' && <span className="badge fuzzy">fuzzy</span>}
+                          {sdet.vehicle_type && (
+                            <span
+                              className="badge vehicle"
+                              title={`Vehicle type: ${sdet.vehicle_type}`}
+                            >
+                              <span className="vehicle-ico" aria-hidden="true">
+                                {vehicleIcon(sdet.vehicle_type)}
+                              </span>
+                              {sdet.vehicle_type}
+                            </span>
+                          )}
                           {conf != null && (
                             <span className="thread-conf">{Math.round(conf * 100)}%</span>
                           )}
