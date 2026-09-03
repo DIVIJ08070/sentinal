@@ -34,6 +34,8 @@ import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+from grid_auth import with_rtsp_auth  # optional RTSP credentials via env
+
 DEFAULT_HOST = "103.250.160.189"
 CAM_RE = re.compile(r"^/([A-Za-z0-9_\-]{1,32})/")
 MANIFEST_WAIT_S = 12.0
@@ -70,7 +72,7 @@ class RelayManager:
             video_args = ["-c", "copy"]
         cmd = ["ffmpeg", "-nostdin", "-v", "error",
                "-rtsp_transport", "tcp", "-timeout", "8000000",
-               "-i", f"rtsp://{self.host}:8554/stream/{cam}",
+               "-i", with_rtsp_auth(f"rtsp://{self.host}:8554/stream/{cam}"),
                *video_args, "-an",
                "-f", "hls", "-hls_time", "2", "-hls_list_size", "6",
                "-hls_flags", "delete_segments+append_list+omit_endlist",

@@ -45,6 +45,12 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
+try:
+    from grid_auth import with_rtsp_auth  # optional RTSP credentials via env
+except ImportError:  # module imported from outside ingest/
+    def with_rtsp_auth(url):
+        return url
+
 logger = logging.getLogger(__name__)
 
 # Rule 8: forward PTS jump above this (or a large backward jump) is a scene
@@ -206,7 +212,10 @@ class CaptureLoop:
         backoff = BACKOFF_INITIAL_S
         while not self.stop_event.is_set():
             for transport, url in self._candidate_urls():
-                cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+                # Credentials (if the gateway requires them) are injected here
+                # from the environment only — the camera record stays clean.
+                open_url = with_rtsp_auth(url) if transport == "rtsp" else url
+                cap = cv2.VideoCapture(open_url, cv2.CAP_FFMPEG)
                 if cap.isOpened():
                     if self._ever_connected:
                         self.reconnects += 1

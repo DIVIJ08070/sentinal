@@ -125,7 +125,10 @@ def load_from_url(url):
 
 
 def _ffprobe_one(host, cam_id):
-    url = RTSP_TEMPLATE.format(host=host, id=cam_id)
+    # Credentials (if required) come from the environment for the probe only;
+    # the catalogue this adapter serves always carries credential-free URLs.
+    from grid_auth import with_rtsp_auth
+    url = with_rtsp_auth(RTSP_TEMPLATE.format(host=host, id=cam_id))
     try:
         out = subprocess.run(
             [

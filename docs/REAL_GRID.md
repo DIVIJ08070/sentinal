@@ -63,3 +63,19 @@ Useful tools:
   `--detector anpr` for ~10 min, then
   `curl 'localhost:8000/api/detections?limit=1000'` and count reads per
   camera to pick the most legible cameras for the demo.
+
+## If the grid starts answering `401 Unauthorized` on RTSP
+
+The sandbox RTSP endpoint was open on day 1; if the organisers enable
+authentication, every client (worker, relay, probes) takes the credential from
+your own shell — nothing is stored in the catalogue, registry or repo:
+
+```bash
+export GRID_RTSP_AUTH='user:password'      # type it yourself; never paste it in chat or commit it
+scripts/demo-live.sh                        # worker + read-tail
+.venv/bin/python ingest/hls_relay.py --cams cam01,cam04 --port 8888   # relay, same terminal or one with the same export
+```
+Test the credential first with FFmpeg (URL form `rtsp://user:password@103.250.160.189:8554/stream/cam01`):
+`ffplay -rtsp_transport tcp 'rtsp://user:password@103.250.160.189:8554/stream/cam01'`.
+Note: FFmpeg prints the input URL in its own error lines, so the relay's local
+`ingest/.hls_relay/*/ffmpeg.log` files (gitignored) may contain the credential.

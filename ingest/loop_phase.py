@@ -14,6 +14,8 @@ import sys
 import cv2
 import numpy as np
 
+from grid_auth import with_rtsp_auth  # optional RTSP credentials via env
+
 HOST = "103.250.160.189"
 
 # Measured plate read-rate per camera (reads/min) from the live soak in
@@ -32,7 +34,7 @@ def grab(cam):
     try:
         out = subprocess.run(
             ["ffmpeg", "-v", "error", "-rtsp_transport", "tcp", "-timeout", "8000000",
-             "-i", f"rtsp://{HOST}:8554/stream/{cam}", "-frames:v", "1", "-f", "image2pipe",
+             "-i", with_rtsp_auth(f"rtsp://{HOST}:8554/stream/{cam}"), "-frames:v", "1", "-f", "image2pipe",
              "-vcodec", "mjpeg", "-q:v", "4", "-"],
             capture_output=True, timeout=40,
         )

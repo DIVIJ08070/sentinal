@@ -71,3 +71,8 @@ Recording tip: the alert in A5 depends on the vehicle's loop returning. Record A
 A6–A8 in one take, then keep a background QuickTime recording running until the alert
 fires (I will ping you the exact time) and splice that 20-second clip in as A5. Say
 plainly on camera that the footage loops.
+
+- Terminal shows `RTSP open failed` on every camera / relay pullers exit immediately →
+  the gateway is asking for credentials (`401 Unauthorized`). In the terminal that runs
+  `demo-live.sh` and the relay: `export GRID_RTSP_AUTH='user:password'` (your own portal
+  credential — never share it), then restart both. See docs/REAL_GRID.md.
