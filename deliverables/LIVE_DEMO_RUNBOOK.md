@@ -97,3 +97,22 @@ plainly on camera that the footage loops.
    stamped in front of them.
 6. **Raw API for the technical jury:** `curl localhost:8000/api/detections?limit=3` — JSON with
    timestamps from seconds ago.
+
+---
+
+## 6. AI view (green boxes) and the two demo modes
+
+**AI view** — in the camera drawer (and each video-wall tile) a toggle **Live video | AI view**.
+AI view shows the worker's own analysed frames: **green boxes = vehicles (YOLO)**, **yellow boxes =
+localised plates**, labelled with the read registration + confidence, plus a HUD (camera, UTC capture
+time, vehicle/plate counts). It exists only for cameras the worker is analysing (those in `DEMO_CAMS`).
+On camera: switch the drawer to AI view while narrating "this is what the AI sees — every vehicle boxed,
+every plate localised and read, live."
+
+**Modes** (one word on the launcher; needs a worker restart = password prompt):
+```bash
+MODE=video  GRID_EMAIL=you@example.com scripts/live-with-auth.sh   # cam06 only, frames analysed 2x faster -> most reads/min (for the take)
+MODE=normal GRID_EMAIL=you@example.com scripts/live-with-auth.sh   # cam06 + cam23 + cam27 -> multi-camera logs (default)
+```
+Tip: a single camera also frees a lot of CPU (four live ANPR streams load a 12-core Mac heavily),
+so the AI view runs smoother in `video` mode.
