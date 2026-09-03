@@ -84,6 +84,14 @@ RTSP_FAILURES_BEFORE_HLS = 2
 MAX_CONSECUTIVE_READ_FAILURES = 30
 READ_FAILURE_SLEEP_S = 0.1
 
+# Decoder-concealment gate. After a lost/corrupt packet, a mid-stream join or
+# a loop point, FFmpeg emits frames whose unreconstructable regions are filled
+# with flat mid-grey (128) blocks and smears until the next keyframe. Measured
+# live on the grid (cam06, HEVC): such frames are 80-100% flat-grey pixels,
+# clean frames 3-12%. Frames above this fraction are skipped — they feed the
+# detector garbage and make the AI view smear — without touching PTS state.
+CORRUPT_FLAT_FRACTION = 0.35
+
 # Health-metrics reporting cadence (wall time between on_metrics callbacks).
 METRICS_INTERVAL_S = 10.0
 
@@ -289,6 +297,7 @@ class CaptureLoop:
         last_pts = None
         last_processed_pts = None
         read_failures = 0
+        corrupt_frames = 0
 
         # Health metrics (wall-clock based; NEVER used for frame timing).
         # fps_measured = frame-count delta over wall time - a measurement of
@@ -386,6 +395,17 @@ class CaptureLoop:
             captured_at = anchor_wall + timedelta(milliseconds=pts - anchor_pts)
             last_pts = pts
 
+            # Skip decoder-concealment frames (see CORRUPT_FLAT_FRACTION).
+            if self._looks_concealed(frame):
+                corrupt_frames += 1
+                if corrupt_frames in (1, 50, 500) or corrupt_frames % 1000 == 0:
+                    logger.info(
+                        "[%s] skipped %d decoder-concealment frame(s) so far "
+                        "(grey fill after packet loss / join / loop point)",
+                        self.name, corrupt_frames,
+                    )
+                continue
+
             # Load pacing by elapsed PTS - never by fps or frame counts.
             if (
                 last_processed_pts is not None
@@ -416,6 +436,24 @@ class CaptureLoop:
                     )
                 except Exception:
                     logger.exception("[%s] frame callback failed", self.name)
+
+    # ------------------------------------------------------------ quality
+
+    @staticmethod
+    def _looks_concealed(frame, flat_fraction=CORRUPT_FLAT_FRACTION):
+        """True when the frame is mostly flat mid-grey (decoder concealment).
+
+        Evaluated on a 160x90 area-downscale (~14k pixels), so the cost is
+        negligible next to detection. Flat grey = every channel within ±6 of
+        128 — real scenes (roads included) are textured and coloured enough to
+        stay far below the threshold; night frames are dark, not grey.
+        """
+        import cv2
+        import numpy as np
+
+        small = cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA)
+        flat = (np.abs(small.astype(np.int16) - 128).max(axis=2) < 6).mean()
+        return bool(flat > flat_fraction)
 
     # -------------------------------------------------------------- metrics
 

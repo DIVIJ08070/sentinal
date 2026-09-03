@@ -113,3 +113,12 @@ loopback port (`--ai-view-port`, default 8892, `AI_VIEW_PORT=0` disables):
 
 Offline check without the grid: `cd ingest && ../.venv/bin/python ai_view_smoke.py /path/to/clip.mp4`
 (writes `deliverables/screenshots/ai_view_sample.jpg`).
+
+## Decoder-concealment frames (grey smear)
+
+After a lost packet, a mid-stream join or a loop point, FFmpeg emits frames whose
+unreconstructable regions are flat mid-grey blocks until the next keyframe. Measured
+live on cam06 (HEVC): ~half the delivered frames in a lossy minute, 80-100% flat-grey
+pixels vs 3-12% for clean frames. `capture.py` skips frames above
+`CORRUPT_FLAT_FRACTION` (0.35) — no detection, not published to the AI view — leaving
+PTS/anchor state untouched. Log line: `skipped N decoder-concealment frame(s)`.
