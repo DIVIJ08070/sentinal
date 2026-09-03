@@ -72,7 +72,7 @@ def arm(plate, cam):
                                  headers={"Content-Type": "application/json"})
     urllib.request.urlopen(req).read()
 
-print("── live plate reads (only reads that land from now on) ───────────")
+print("── live plate reads (only reads that land from now on) ───────────", flush=True)
 while True:
     try:
         rows = json.load(urllib.request.urlopen(f"{backend}/api/detections?limit=30"))
