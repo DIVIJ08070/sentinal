@@ -11,7 +11,7 @@ Endpoints (all with ``Access-Control-Allow-Origin: *``):
 
     GET /ai                 JSON list of camera keys with last-frame age
     GET /ai/<key>.jpg       latest annotated frame (JPEG), 404 until one exists
-    GET /ai/<key>.mjpg      multipart/x-mixed-replace MJPEG stream (~4 fps)
+    GET /ai/<key>.mjpg      multipart/x-mixed-replace MJPEG stream (~10 fps)
 
 ``key`` is the camera's ``external_id`` when present, else ``str(id)`` (see
 :func:`cam_key_for`). Wire-up: the worker starts one :class:`AiViewServer`
@@ -41,7 +41,7 @@ import numpy as np
 DEFAULT_PORT = 8892
 MAX_WIDTH = 960                 # downscale before drawing so lines stay crisp
 JPEG_QUALITY = 75
-STREAM_PART_SLEEP_S = 0.25      # ~4 fps MJPEG
+STREAM_PART_SLEEP_S = 0.1       # ~10 fps MJPEG
 VEHICLE_COLOR = (0, 200, 90)    # BGR green
 PLATE_COLOR = (0, 215, 255)     # BGR yellow
 LABEL_TEXT_COLOR = (255, 255, 255)

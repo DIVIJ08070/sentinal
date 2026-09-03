@@ -411,6 +411,18 @@ class CaptureLoop:
                 last_processed_pts is not None
                 and (pts - last_processed_pts) < self.process_interval_ms
             ):
+                # Not analysed (pacing) — still hand the frame to the AI view
+                # with the detector's LATEST boxes, so the overlay stream is
+                # fluid video rather than a slideshow of analysed frames.
+                if self.on_frame is not None:
+                    try:
+                        self.on_frame(
+                            self.camera, frame,
+                            getattr(self.detector, "last_frame_boxes", []),
+                            pts, captured_at,
+                        )
+                    except Exception:
+                        logger.exception("[%s] frame callback failed", self.name)
                 continue
             last_processed_pts = pts
 

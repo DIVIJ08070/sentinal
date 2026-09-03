@@ -72,6 +72,9 @@ class RelayManager:
             video_args = ["-c", "copy"]
         cmd = ["ffmpeg", "-nostdin", "-v", "error",
                "-rtsp_transport", "tcp", "-timeout", "8000000",
+               # RTP packet loss: drop the incomplete frame instead of letting
+               # the player paint grey concealment smears (freeze > smear).
+               "-fflags", "+discardcorrupt",
                "-i", with_rtsp_auth(f"rtsp://{self.host}:8554/stream/{cam}"),
                *video_args, "-an",
                "-f", "hls", "-hls_time", "2", "-hls_list_size", "6",
