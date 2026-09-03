@@ -73,6 +73,10 @@ class Detection(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id"), index=True)
     object_type: Mapped[str] = mapped_column(String(32), default="vehicle")
+    # Coarse vehicle class from the ingest detector's YOLO COCO id — one of
+    # car|motorcycle|bus|truck, else null (SQLite recreates the table on the
+    # next backend start, so no migration is needed for this new column).
+    vehicle_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     plate: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)  # normalized
     # The raw OCR read exactly as posted, before normalization — surfaced as
     # `matched_from` on alerts and route points (evidence transparency).

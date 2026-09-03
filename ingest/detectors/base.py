@@ -22,6 +22,9 @@ class DetectionResult:
     plate_confidence: Optional[float] = None
     bbox: Optional[str] = None
     snapshot_b64: Optional[str] = None
+    #: Coarse vehicle class from the YOLO COCO id when known — one of
+    #: 'car' | 'motorcycle' | 'bus' | 'truck', else None (the mock sets 'car').
+    vehicle_type: Optional[str] = None
 
 
 class Detector:

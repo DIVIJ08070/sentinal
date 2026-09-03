@@ -187,6 +187,8 @@ def main(argv=None) -> int:
             "captured_at": iso_z(captured_at),
             "detector": args.detector,
         }
+        if getattr(result, "vehicle_type", None):
+            payload["vehicle_type"] = result.vehicle_type
         if result.plate:
             payload["plate"] = result.plate
         if result.plate_confidence is not None:

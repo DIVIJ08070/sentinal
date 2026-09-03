@@ -74,6 +74,7 @@ class MockDetector(Detector):
                 object_type="vehicle",
                 plate=plate,
                 plate_confidence=self.plate_confidence,
+                vehicle_type="car",
                 bbox=None,
                 snapshot_b64=None,
             )

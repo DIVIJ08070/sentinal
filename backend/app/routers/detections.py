@@ -113,6 +113,7 @@ async def create_detection(payload: DetectionCreate, db: Session = Depends(get_d
     detection = Detection(
         camera_id=camera.id,
         object_type=payload.object_type or "vehicle",
+        vehicle_type=payload.vehicle_type,
         plate=plate,
         plate_raw=(payload.plate if plate else None),
         plate_confidence=payload.plate_confidence,

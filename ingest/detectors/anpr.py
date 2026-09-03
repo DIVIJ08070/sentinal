@@ -15,13 +15,17 @@ Pipeline per frame:
      real sandbox grid with a near-zero real-scene read rate. If no vehicle
      crop yields a plate, the localizer runs once on the FULL frame (plates
      on vehicles YOLO missed or clipped).
-  4. The plate bbox is padded ~2 px, and crops narrower than 96 px are
-     upscaled with INTER_CUBIC before OCR. This exact combination was
-     validated live on the government sandbox grid (read CMMC801 off cam23).
+  4. The plate bbox is padded ~2 px, then ENHANCED for OCR: LANCZOS4 upscale
+     to >=240 px wide, LAB-CLAHE on the L channel, unsharp mask (the recipe
+     validated live — a 61x24 px 'XA02MH7256' plate became legible). The plain
+     <96 px INTER_CUBIC upscale (which read CMMC801 off cam23 live) is kept as
+     a fallback so enhancement can only ADD reads, never remove them.
   5. fast-plate-ocr reads the registration number.
-  6. On a successful read, the result carries the bbox (JSON) and a small
-     base64 JPEG snapshot of the VEHICLE crop with the plate visible (max
-     ~320 px wide). Snapshots are attached ONLY when a plate was read.
+  6. On a successful read, the result carries the bbox (JSON), the coarse
+     vehicle_type (car/motorcycle/bus/truck from the YOLO class), and a small
+     base64 JPEG COMPOSITE snapshot: the VEHICLE crop above a strip with the
+     enhanced plate close-up + the read text + confidence (<= ~40 KB, max
+     360 px wide). Snapshots are attached ONLY when a plate was read.
 
 If open-image-models is not installed the detector degrades to the old
 whole-vehicle-crop OCR path instead of failing.
@@ -86,6 +90,10 @@ from .base import DetectionResult, Detector
 
 # COCO class ids: 2=car, 3=motorbike, 5=bus, 7=truck
 VEHICLE_CLASS_IDS = (2, 3, 5, 7)
+# COCO id -> the coarse vehicle_type stored on the detection / shown on alerts,
+# route points and the AI-view box label. 'motorbike' (COCO) is surfaced as the
+# contract's 'motorcycle'.
+VEHICLE_TYPE_BY_CLASS = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
 
 
 def _plate_label(plate: str, confidence: Optional[float]) -> str:
@@ -123,6 +131,12 @@ class AnprDetector(Detector):
         # 96 px + ~2 px bbox pad is the combination validated live on the
         # sandbox grid (read CMMC801 off cam23).
         ocr_min_plate_width: int = 96,
+        # Enhancement target width for the OCR input and the composite snapshot
+        # close-up: LANCZOS4 upscale to >= this, then LAB-CLAHE + unsharp. 240
+        # is the recipe validated live (a 61x24 px 'XA02MH7256' plate became
+        # legible). The plain <ocr_min_plate_width INTER_CUBIC upscale is kept
+        # as a fallback so enhancement can never REDUCE the read rate.
+        ocr_enhance_min_width: int = 240,
         plate_pad_px: int = 2,
         # Structural gate on OCR output. The live sandbox grid taught us the
         # localizer will happily "find" a camera's burned-in caption
@@ -147,6 +161,7 @@ class AnprDetector(Detector):
         self.min_crop_px = int(min_crop_px)
         self.plate_conf = float(plate_conf)
         self.ocr_min_plate_width = int(ocr_min_plate_width)
+        self.ocr_enhance_min_width = int(ocr_enhance_min_width)
         self.plate_pad_px = int(plate_pad_px)
         self._plate_re = re.compile(plate_pattern) if plate_pattern else None
         self.full_frame_fallback = bool(full_frame_fallback)
@@ -210,12 +225,16 @@ class AnprDetector(Detector):
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(width, x2), min(height, y2)
             conf = float(box.conf[0])
+            cls_id = int(box.cls[0]) if box.cls is not None else None
+            vehicle_type = VEHICLE_TYPE_BY_CLASS.get(cls_id)
+            # AI-view label carries the coarse class ('car 0.92' / 'truck 0.88').
             boxes.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2,
-                          "kind": "vehicle", "label": f"vehicle {conf:.2f}"})
+                          "kind": "vehicle",
+                          "label": f"{vehicle_type or 'vehicle'} {conf:.2f}"})
             if (x2 - x1) < self.min_crop_px or (y2 - y1) < self.min_crop_px:
                 continue
             if best_vehicle is None or conf > best_vehicle[0]:
-                best_vehicle = (conf, (x1, y1, x2, y2))
+                best_vehicle = (conf, (x1, y1, x2, y2), cls_id)
 
             # Localize the plate INSIDE the vehicle crop, then OCR the tight
             # plate region — fast-plate-ocr expects a plate crop, not a whole
@@ -239,7 +258,7 @@ class AnprDetector(Detector):
                 # Localizer active but no plate in this vehicle crop; the
                 # full-frame fallback below may still catch it.
                 continue
-            plate, plate_conf = self._read_plate(self._ocr_input(ocr_src))
+            plate, plate_conf = self._read_plate_best(ocr_src)
             if plate is None:
                 continue
             if plate_box is not None:
@@ -251,10 +270,14 @@ class AnprDetector(Detector):
                     object_type="vehicle",
                     plate=plate,
                     plate_confidence=plate_conf,
+                    vehicle_type=vehicle_type,
                     bbox=json.dumps([x1, y1, x2, y2]),
-                    # Snapshot only when a plate was read: the VEHICLE crop
-                    # with the plate visible.
-                    snapshot_b64=self._encode_snapshot(crop),
+                    # Snapshot only when a plate was read: a COMPOSITE of the
+                    # VEHICLE crop above an enhanced plate close-up + read text.
+                    snapshot_b64=self._encode_snapshot(
+                        crop, plate_region=ocr_src, plate=plate,
+                        confidence=plate_conf,
+                    ),
                 )
             )
 
@@ -272,17 +295,18 @@ class AnprDetector(Detector):
                 plate_box = {"x1": px1, "y1": py1, "x2": px2, "y2": py2,
                              "kind": "plate", "label": "plate"}
                 boxes.append(plate_box)
-                plate, plate_conf = self._read_plate(self._ocr_input(region))
+                plate, plate_conf = self._read_plate_best(region)
                 if plate is not None:
                     plate_box["label"] = _plate_label(plate, plate_conf)
                 if plate is not None and self._should_emit(plate, pts_ms):
                     if best_vehicle is not None:
-                        _, (vx1, vy1, vx2, vy2) = best_vehicle
+                        _, (vx1, vy1, vx2, vy2), cls_id = best_vehicle
                         snap = frame[vy1:vy2, vx1:vx2]
                         bbox = [vx1, vy1, vx2, vy2]
                     else:
                         # No vehicle bbox: snapshot a context region around
                         # the plate so the vehicle is still visible.
+                        cls_id = None
                         cw, ch = (px2 - px1), (py2 - py1)
                         sx1 = max(0, px1 - 2 * cw)
                         sy1 = max(0, py1 - 4 * ch)
@@ -295,8 +319,12 @@ class AnprDetector(Detector):
                             object_type="vehicle",
                             plate=plate,
                             plate_confidence=plate_conf,
+                            vehicle_type=VEHICLE_TYPE_BY_CLASS.get(cls_id),
                             bbox=json.dumps(bbox),
-                            snapshot_b64=self._encode_snapshot(snap),
+                            snapshot_b64=self._encode_snapshot(
+                                snap, plate_region=region, plate=plate,
+                                confidence=plate_conf,
+                            ),
                         )
                     )
 
@@ -308,12 +336,13 @@ class AnprDetector(Detector):
                 or (pts_ms - self._last_plateless_pts) >= self.plateless_interval_ms
             ):
                 self._last_plateless_pts = pts_ms
-                _, (x1, y1, x2, y2) = best_vehicle
+                _, (x1, y1, x2, y2), cls_id = best_vehicle
                 results.append(
                     DetectionResult(
                         object_type="vehicle",
                         plate=None,
                         plate_confidence=None,
+                        vehicle_type=VEHICLE_TYPE_BY_CLASS.get(cls_id),
                         bbox=json.dumps([x1, y1, x2, y2]),
                         snapshot_b64=None,
                     )
@@ -360,8 +389,59 @@ class AnprDetector(Detector):
             return None
         return image[y1:y2, x1:x2], (x1, y1, x2, y2)
 
+    def _enhance_plate(self, crop):
+        """Super-resolve + contrast-equalize + sharpen a plate crop.
+
+        The exact recipe validated live (a 61x24 px 'XA02MH7256' plate became
+        legible): LANCZOS4 upscale to >= ocr_enhance_min_width, LAB-CLAHE on
+        the L channel (clipLimit 3.0, 8x8 tiles), then an unsharp mask
+        (addWeighted 1.7 / -0.7 against a GaussianBlur at sigma 1.1). Returns
+        an enhanced BGR crop, or the input unchanged on any failure — never
+        raises, so it is safe on the hot path.
+        """
+        try:
+            if crop is None:
+                return None
+            h, w = crop.shape[:2]
+            if h < 1 or w < 1:
+                return crop
+            if w < self.ocr_enhance_min_width:
+                scale = self.ocr_enhance_min_width / float(w)
+                crop = cv2.resize(
+                    crop,
+                    (self.ocr_enhance_min_width, max(1, int(round(h * scale)))),
+                    interpolation=cv2.INTER_LANCZOS4,
+                )
+            # LAB-CLAHE on L (luminance) so colour is untouched; grayscale
+            # crops are equalized directly.
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            if crop.ndim == 3 and crop.shape[2] == 3:
+                lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)
+                l, a, b = cv2.split(lab)
+                l = clahe.apply(l)
+                enhanced = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
+            else:
+                enhanced = clahe.apply(crop)
+            # Unsharp mask.
+            blur = cv2.GaussianBlur(enhanced, (0, 0), 1.1)
+            enhanced = cv2.addWeighted(enhanced, 1.7, blur, -0.7, 0)
+            return enhanced
+        except Exception:
+            return crop
+
     def _ocr_input(self, region):
-        """Upscale narrow plate crops before OCR.
+        """Primary OCR input: the ENHANCED plate crop (LANCZOS4 upscale to
+        >= ocr_enhance_min_width, LAB-CLAHE, unsharp). This supersedes the old
+        plain upscale for the main read; :meth:`_upscale_narrow` is kept as the
+        fallback (see :meth:`_read_plate_best`) so enhancement never lowers the
+        read rate on any crop the plain path would have read.
+        """
+        enhanced = self._enhance_plate(region)
+        return enhanced if enhanced is not None else region
+
+    def _upscale_narrow(self, region):
+        """Plain INTER_CUBIC upscale of narrow crops (the pre-enhancement OCR
+        input, kept as a fallback).
 
         Crops narrower than ocr_min_plate_width px are INTER_CUBIC-upscaled
         to that width (plate pixel size was the measured bottleneck on the
@@ -376,6 +456,15 @@ class AnprDetector(Detector):
                 interpolation=cv2.INTER_CUBIC,
             )
         return region
+
+    def _read_plate_best(self, region) -> Tuple[Optional[str], Optional[float]]:
+        """OCR a plate region, enhanced input first with a plain-upscale
+        fallback so the enhancement can only ADD reads, never remove them.
+        """
+        plate, confidence = self._read_plate(self._ocr_input(region))
+        if plate is None:
+            plate, confidence = self._read_plate(self._upscale_narrow(region))
+        return plate, confidence
 
     def _read_plate(self, crop) -> Tuple[Optional[str], Optional[float]]:
         """Run OCR on a plate crop; returns (plate, confidence) or (None, None).
@@ -449,21 +538,74 @@ class AnprDetector(Detector):
         self._recent_plates[plate] = pts_ms
         return True
 
-    def _encode_snapshot(self, crop) -> Optional[str]:
-        """JPEG-encode the vehicle crop at <= snapshot_max_width, base64."""
+    # Composite snapshot geometry (see _encode_snapshot). PANEL_W caps the
+    # width (<= snapshot_max_width, contract), MAX_VEHICLE_H caps the vehicle
+    # panel and STRIP_H the evidence strip so the composite is always wider
+    # than tall (a landscape evidence card) and comfortably under ~40 KB.
+    _COMPOSITE_MAX_VEHICLE_H = 200
+    _COMPOSITE_STRIP_H = 96
+
+    def _encode_snapshot(
+        self, crop, plate_region=None, plate=None, confidence=None
+    ) -> Optional[str]:
+        """Base64 JPEG COMPOSITE evidence card, or None.
+
+        The vehicle crop sits above a bottom strip carrying the ENHANCED plate
+        close-up, the read registration and its confidence. Width is capped at
+        min(snapshot_max_width, 360) and the panels are sized so the card is
+        always wider than tall; encoded at JPEG q72 (<= ~40 KB). Attached only
+        when a plate was read (the caller enforces that).
+        """
         try:
-            image = crop
-            h, w = image.shape[:2]
-            if h < 1 or w < 1:
+            if crop is None or crop.shape[0] < 1 or crop.shape[1] < 1:
                 return None
-            if w > self.snapshot_max_width:
-                scale = self.snapshot_max_width / float(w)
-                image = cv2.resize(
-                    image,
-                    (self.snapshot_max_width, max(1, int(round(h * scale)))),
-                    interpolation=cv2.INTER_AREA,
-                )
-            ok, buf = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+            panel_w = min(int(self.snapshot_max_width), 360)
+
+            # --- vehicle panel: fit width, then centre-crop to a max height so
+            # the whole card stays landscape (the plate close-up is in the strip
+            # below, so cropping vehicle context here loses no evidence). ---
+            vh, vw = crop.shape[:2]
+            scale = panel_w / float(vw)
+            vehicle = cv2.resize(
+                crop, (panel_w, max(1, int(round(vh * scale)))),
+                interpolation=cv2.INTER_AREA,
+            )
+            if vehicle.shape[0] > self._COMPOSITE_MAX_VEHICLE_H:
+                top = (vehicle.shape[0] - self._COMPOSITE_MAX_VEHICLE_H) // 2
+                vehicle = vehicle[top:top + self._COMPOSITE_MAX_VEHICLE_H]
+
+            # --- evidence strip: dark band with the enhanced plate + text. ---
+            strip_h = self._COMPOSITE_STRIP_H
+            strip = np.full((strip_h, panel_w, 3), (24, 24, 24), dtype=np.uint8)
+            pad = 8
+            text_x = pad
+            plate_src = plate_region if plate_region is not None else crop
+            enhanced = self._enhance_plate(plate_src)
+            if enhanced is not None and enhanced.shape[0] >= 1 and enhanced.shape[1] >= 1:
+                box_h = strip_h - 2 * pad
+                box_w = min(panel_w // 2, 200)
+                eh, ew = enhanced.shape[:2]
+                s = min(box_w / float(ew), box_h / float(eh))
+                pw, ph = max(1, int(round(ew * s))), max(1, int(round(eh * s)))
+                plate_img = cv2.resize(enhanced, (pw, ph), interpolation=cv2.INTER_AREA)
+                y0 = (strip_h - ph) // 2
+                strip[y0:y0 + ph, pad:pad + pw] = plate_img
+                cv2.rectangle(strip, (pad, y0), (pad + pw, y0 + ph), (0, 215, 255), 1)
+                text_x = pad + pw + pad
+
+            cv2.putText(strip, "ENHANCED PLATE", (text_x, 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 200, 255), 1, cv2.LINE_AA)
+            if plate:
+                cv2.putText(strip, str(plate), (text_x, 52),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 255, 255), 2, cv2.LINE_AA)
+            conf_txt = f"conf {confidence:.2f}" if confidence is not None else "conf n/a"
+            cv2.putText(strip, conf_txt, (text_x, 80),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 215, 255), 1, cv2.LINE_AA)
+
+            composite = np.vstack([vehicle, strip])
+            ok, buf = cv2.imencode(
+                ".jpg", composite, [int(cv2.IMWRITE_JPEG_QUALITY), 72]
+            )
             if not ok:
                 return None
             return base64.b64encode(buf.tobytes()).decode("ascii")

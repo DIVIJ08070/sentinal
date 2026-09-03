@@ -48,6 +48,22 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * _EARTH_RADIUS_KM * math.asin(math.sqrt(a))
 
 
+def initial_bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Initial great-circle bearing from point 1 to point 2, degrees 0-360
+    (0 = due north, 90 = due east)."""
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dlon = math.radians(lon2 - lon1)
+    y = math.sin(dlon) * math.cos(phi2)
+    x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(dlon)
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
+def bearing_delta_deg(a: float, b: float) -> float:
+    """Smallest absolute angle between two bearings (0-180 degrees)."""
+    d = abs(a - b) % 360.0
+    return d if d <= 180.0 else 360.0 - d
+
+
 # Retro-rejection (first-sighting poisoning guard): when the CHAIN-START
 # anchor causes this many consecutive, mutually consistent rejections, the
 # anchor itself is the outlier — reject it and re-anchor on the chain.
@@ -207,6 +223,7 @@ def build_route_payload(
             "captured_at": iso_z(detection.captured_at),
             "pts_ms": detection.pts_ms,
             "confidence": detection.plate_confidence,
+            "vehicle_type": detection.vehicle_type,
             "snapshot_b64": detection.snapshot_b64,
             "fuzzy": score.match_type == "fuzzy",
             "match_confidence": score.confidence,
@@ -242,6 +259,139 @@ def build_route_payload(
             "distance_km": round(distance_km, 3),
         },
     }
+
+
+# Intercept-prediction heuristics (pure geometry — labeled heuristic, no ML).
+PREDICT_MAX_BEARING_DELTA_DEG = 60.0  # a camera must lie within this of heading
+PREDICT_MIN_SPEED_KMH = 3.0           # below this the vehicle is "stationary"
+PREDICT_RECENT_LEGS = 3               # legs used for the mean-speed estimate
+PREDICT_SOON_SECONDS = 1800.0         # "reachable soon" horizon for confidence
+PREDICT_TOP_N = 3
+
+
+def _parse_iso_z(s: str) -> datetime:
+    """Parse an iso_z timestamp ('...Z') back to a naive-UTC datetime."""
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+
+
+def build_intercept_prediction(
+    db: Session,
+    plate: str,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> dict:
+    """Predict where a vehicle is heading next from its accepted sightings.
+
+    Pure geometry (haversine + bearings), no new deps and no ML: from the last
+    accepted sightings compute the current heading and mean speed, then rank
+    OTHER cameras that lie ahead (bearing within PREDICT_MAX_BEARING_DELTA_DEG
+    of the heading) by how well they line up and how soon they are reachable.
+    ETA is a heuristic (distance / recent mean speed, straight-line), not a
+    routed drive time. Returns {predictions:[...], reason:str|None, heading_deg,
+    mean_speed_kmh, from_camera_id}.
+    """
+    payload = build_route_payload(db, plate, since, until)
+    target = payload["plate"]
+    accepted = [
+        p for p in payload["points"]
+        if not p["rejected"] and p["lat"] is not None and p["lon"] is not None
+    ]
+    if len(accepted) < 2:
+        return {
+            "plate": target,
+            "predictions": [],
+            "reason": "need at least 2 accepted sightings with coordinates to "
+                      "establish a heading",
+        }
+
+    # Mean speed over the most recent legs; heading from the final leg.
+    recent = accepted[-(PREDICT_RECENT_LEGS + 1):]
+    total_km = 0.0
+    total_s = 0.0
+    for a, b in zip(recent, recent[1:]):
+        total_km += haversine_km(a["lat"], a["lon"], b["lat"], b["lon"])
+        total_s += (_parse_iso_z(b["captured_at"]) - _parse_iso_z(a["captured_at"])).total_seconds()
+    mean_kmh = (total_km / total_s * 3600.0) if total_s > 0 else 0.0
+
+    last, prev = accepted[-1], accepted[-2]
+    heading = initial_bearing_deg(prev["lat"], prev["lon"], last["lat"], last["lon"])
+
+    if mean_kmh < PREDICT_MIN_SPEED_KMH:
+        return {
+            "plate": target,
+            "predictions": [],
+            "reason": f"vehicle effectively stationary (mean speed "
+                      f"{mean_kmh:.1f} km/h) — no meaningful heading to project",
+            "heading_deg": round(heading, 1),
+            "mean_speed_kmh": round(mean_kmh, 1),
+            "from_camera_id": last["camera_id"],
+        }
+
+    cameras = (
+        db.query(Camera)
+        .filter(Camera.lat.isnot(None), Camera.lon.isnot(None))
+        .all()
+    )
+    candidates = []
+    for cam in cameras:
+        if cam.id == last["camera_id"]:
+            continue
+        dist_km = haversine_km(last["lat"], last["lon"], cam.lat, cam.lon)
+        if dist_km <= SAME_LOCATION_KM:
+            continue  # co-located with the last sighting — not "ahead"
+        cam_bearing = initial_bearing_deg(last["lat"], last["lon"], cam.lat, cam.lon)
+        delta = bearing_delta_deg(heading, cam_bearing)
+        if delta > PREDICT_MAX_BEARING_DELTA_DEG:
+            continue  # not in the direction of travel
+        eta_s = dist_km / mean_kmh * 3600.0
+        alignment = 1.0 - (delta / PREDICT_MAX_BEARING_DELTA_DEG)  # 1=dead ahead
+        proximity = max(0.0, 1.0 - eta_s / PREDICT_SOON_SECONDS)   # 1=reachable now
+        confidence = round(0.7 * alignment + 0.3 * proximity, 2)
+        candidates.append({
+            "camera_id": cam.id,
+            "camera_name": cam.name,
+            "lat": cam.lat,
+            "lon": cam.lon,
+            "distance_km": round(dist_km, 3),
+            "bearing_deg": round(cam_bearing, 1),
+            "eta_seconds": round(eta_s, 1),
+            "confidence": confidence,
+        })
+
+    # Rank: best heading alignment + soonest reachable (both fold into
+    # confidence); ties broken by nearer ETA.
+    candidates.sort(key=lambda c: (-c["confidence"], c["eta_seconds"]))
+    top = candidates[:PREDICT_TOP_N]
+    return {
+        "plate": target,
+        "predictions": top,
+        "reason": None if top else "no cameras lie ahead on the current heading",
+        "heading_deg": round(heading, 1),
+        "mean_speed_kmh": round(mean_kmh, 1),
+        "from_camera_id": last["camera_id"],
+        "eta_note": "eta_seconds is a heuristic: straight-line distance / recent "
+                    "mean speed, not a routed drive time",
+    }
+
+
+@router.get("/vehicles/{plate}/predict")
+def vehicle_predict(
+    plate: str,
+    request: Request,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    db: Session = Depends(get_db),
+):
+    payload = build_intercept_prediction(db, plate, since, until)
+    audit_record(
+        db, "intercept_predict", resolve_operator(request), plate=payload["plate"],
+        since=iso_z(as_naive_utc(since)) if since else None,
+        until=iso_z(as_naive_utc(until)) if until else None,
+        predictions=len(payload["predictions"]),
+        heading_deg=payload.get("heading_deg"),
+        mean_speed_kmh=payload.get("mean_speed_kmh"),
+    )
+    return payload
 
 
 @router.get("/vehicles/{plate}/route")

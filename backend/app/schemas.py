@@ -133,6 +133,7 @@ class DetectionCreate(BaseModel):
     camera_id: Optional[int] = None
     camera_external_id: Optional[str] = None
     object_type: str = "vehicle"
+    vehicle_type: Optional[str] = None  # car|motorcycle|bus|truck (from ingest)
     plate: Optional[str] = None
     plate_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     pts_ms: Optional[float] = None
@@ -154,6 +155,7 @@ class DetectionOut(BaseModel):
     id: int
     camera_id: int
     object_type: str
+    vehicle_type: Optional[str]
     plate: Optional[str]
     plate_raw: Optional[str]
     plate_confidence: Optional[float]
@@ -204,6 +206,7 @@ def alert_to_dict(alert) -> dict:
         "detection": {
             "captured_at": iso_z(detection.captured_at),
             "plate_confidence": detection.plate_confidence,
+            "vehicle_type": detection.vehicle_type,
             "snapshot_b64": detection.snapshot_b64,
         } if detection is not None else None,
     }
