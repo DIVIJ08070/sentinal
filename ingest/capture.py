@@ -47,9 +47,14 @@ from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
-# Rule 8: forward PTS jump above this (or any backward jump) is a scene
+# Rule 8: forward PTS jump above this (or a large backward jump) is a scene
 # discontinuity (feed loop point / source restart) -> re-anchor + reset.
 DISCONTINUITY_GAP_MS = 10_000.0
+# Backward PTS steps smaller than this are RTP / B-frame reordering jitter,
+# not a loop point (cam27 on the live grid shows ~1.2 s backward steps many
+# times a minute). Such frames are skipped WITHOUT re-anchoring or resetting
+# the detector — treating them as cuts starved ANPR of every stable frame.
+PTS_JITTER_TOLERANCE_MS = 3_000.0
 
 # Rule 5: exponential backoff bounds for reconnect attempts.
 BACKOFF_INITIAL_S = 2.0
@@ -335,7 +340,8 @@ class CaptureLoop:
                 anchor_wall = datetime.now(timezone.utc)
                 anchor_pts = pts
             elif last_pts is not None and (
-                pts < last_pts or (pts - last_pts) > DISCONTINUITY_GAP_MS
+                pts < last_pts - PTS_JITTER_TOLERANCE_MS
+                or (pts - last_pts) > DISCONTINUITY_GAP_MS
             ):
                 # Rule 8: loop point / hard cut. Re-anchor the clock and reset
                 # stateful detector models (background, trackers, galleries).
@@ -347,6 +353,10 @@ class CaptureLoop:
                 anchor_pts = pts
                 last_processed_pts = None
                 self.detector.reset()
+            elif last_pts is not None and pts < last_pts:
+                # Small backward step: reordering jitter, not a cut. Skip the
+                # out-of-order frame; keep the anchor and detector state.
+                continue
 
             captured_at = anchor_wall + timedelta(milliseconds=pts - anchor_pts)
             last_pts = pts

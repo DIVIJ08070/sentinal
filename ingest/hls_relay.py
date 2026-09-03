@@ -225,6 +225,19 @@ class CorsHandler(SimpleHTTPRequestHandler):
         pass
 
 
+class QuietServer(ThreadingHTTPServer):
+    """A player closing its connection mid-segment raises BrokenPipe /
+    ConnectionReset inside copyfile. That is routine, not an error, and must
+    not dump tracebacks into the relay's terminal (socketserver reports
+    handler exceptions via the SERVER's handle_error)."""
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cams", default="", help="comma-separated STANDING camera ids")
@@ -274,7 +287,7 @@ def main():
     handler = functools.partial(CorsHandler, directory=args.dir)
     handler.manager = mgr
     CorsHandler.manager = mgr
-    ThreadingHTTPServer(("127.0.0.1", args.port), handler).serve_forever()
+    QuietServer(("127.0.0.1", args.port), handler).serve_forever()
 
 
 if __name__ == "__main__":
