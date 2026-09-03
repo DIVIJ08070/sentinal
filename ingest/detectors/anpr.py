@@ -96,7 +96,11 @@ class AnprDetector(Detector):
         yolo_model: str = "yolov8n.pt",
         ocr_model: Optional[str] = None,
         vehicle_conf: float = 0.4,
-        min_plate_len: int = 6,
+        # 8, not 6: the shortest genuine Indian registration is 8 characters
+        # (state code + district digit(s) + series + 4 digits, e.g. GJ5A1234).
+        # Shorter strings were, in every case observed on real footage, OCR
+        # fragments of small/angled plates (KT4455, BT4453 ...) — junk.
+        min_plate_len: int = 8,
         # 0.35, down from 0.55 — recalibrated on the real sandbox grid
         # (docs/EVIDENCE.md): recall-first by design. The confidence is always
         # DISPLAYED on every alert/route row, and the false-positive side is

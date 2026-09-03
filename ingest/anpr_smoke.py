@@ -196,9 +196,11 @@ def main() -> int:
         # On the live sandbox grid the plate localizer OCR'd a camera's
         # burned-in caption ("Camera 01") into plate-shaped junk. The gate must
         # reject those and keep genuine Indian registrations.
-        junk = ["CMEP801", "C0MC01", "4MB8801", "CMMC701", "CAMERA01"]
-        genuine = ["GJ1104284", "GJ01AB1234", "GJ19PE8859", "MH12AB1234"]
-        gate = lambda p: (detector._plate_re is None or detector._plate_re.match(p)) \
+        junk = ["CMEP801", "C0MC01", "4MB8801", "CMMC701", "CAMERA01",
+                "KT4455", "BT4453", "SN4444"]  # 6-char fragments of small plates
+        genuine = ["GJ1104284", "GJ01AB1234", "GJ19PE8859", "MH12AB1234", "GJ750887"]
+        gate = lambda p: len(p) >= detector.min_plate_len \
+            and (detector._plate_re is None or detector._plate_re.match(p)) \
             and sum(ch.isdigit() for ch in p) >= 3
         leaked = [p for p in junk if gate(p)]
         blocked = [p for p in genuine if not gate(p)]
