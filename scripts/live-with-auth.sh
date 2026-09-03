@@ -8,7 +8,7 @@
 #
 # Usage:  GRID_EMAIL=you@example.com scripts/live-with-auth.sh
 #         MODE=video GRID_EMAIL=you@example.com scripts/live-with-auth.sh
-#         (optional: RELAY_CAMS=cam01,cam04  DEMO_CAMS=...  INTERVAL_MS=...  AUTO_ARM=3)
+#         (optional: RELAY_CAMS=cam01,cam06  DEMO_CAMS=...  INTERVAL_MS=...  AUTO_ARM=3)
 #
 # MODE presets (explicit DEMO_CAMS / INTERVAL_MS always override):
 #   normal (default)  DEMO_CAMS=cam06,cam23,cam27  INTERVAL_MS=300  — the demo
@@ -51,7 +51,8 @@ unset ENC
 if curl -s -m 3 -o /dev/null http://localhost:8888/; then
   echo "• relay already listening on :8888 — leaving it (stop it first if it lacks the credential)"
 else
-  "$PY" "$ROOT/ingest/hls_relay.py" --cams "${RELAY_CAMS:-cam01,cam04}" --port 8888 > /tmp/sentinel-relay.log 2>&1 &
+  RELAY_DEFAULT="cam01,${DEMO_CAMS}"
+  "$PY" "$ROOT/ingest/hls_relay.py" --cams "${RELAY_CAMS:-$RELAY_DEFAULT}" --port 8888 > /tmp/sentinel-relay.log 2>&1 &
   RELAY=$!
   trap 'kill "$RELAY" 2>/dev/null || true' EXIT
   echo "▶ relay started (pid $RELAY, log /tmp/sentinel-relay.log)"
