@@ -117,6 +117,12 @@ class CaptureLoop:
     process_interval_ms:
         Minimum elapsed *PTS* between frames handed to the detector - load
         pacing driven by stream time, never by fps or frame counts (rule 2).
+    on_frame:
+        Optional callback ``(camera, frame, boxes, pts_ms, captured_at)``
+        invoked after the detector has processed a frame, with the detector's
+        ``last_frame_boxes`` overlay list (see detectors/base.py). Used by the
+        live "AI view" (ai_view.py). Exceptions are logged, never fatal; when
+        None nothing extra happens on the hot path.
     """
 
     def __init__(
@@ -129,6 +135,7 @@ class CaptureLoop:
         stop_event=None,
         process_interval_ms=200.0,
         metrics_interval_s=METRICS_INTERVAL_S,
+        on_frame=None,
     ):
         self.camera = camera
         self.detector = detector
@@ -138,6 +145,7 @@ class CaptureLoop:
         # metrics_interval_s of wall time with measured health metrics:
         # fps_measured, last_frame_age_s, reconnects, bandwidth_kbps.
         self.on_metrics = on_metrics
+        self.on_frame = on_frame
         self.stop_event = stop_event if stop_event is not None else threading.Event()
         self.process_interval_ms = float(process_interval_ms)
         self.metrics_interval_s = float(metrics_interval_s)
@@ -396,6 +404,18 @@ class CaptureLoop:
                     self.on_detection(self.camera, result, pts, captured_at)
                 except Exception:
                     logger.exception("[%s] detection callback failed", self.name)
+            if self.on_frame is not None:
+                # Live AI view: annotated-frame hook. Overlay boxes are the
+                # detector's per-frame side channel; the hook must never
+                # affect capture or detection.
+                try:
+                    self.on_frame(
+                        self.camera, frame,
+                        getattr(self.detector, "last_frame_boxes", []),
+                        pts, captured_at,
+                    )
+                except Exception:
+                    logger.exception("[%s] frame callback failed", self.name)
 
     # -------------------------------------------------------------- metrics
 

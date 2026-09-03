@@ -30,6 +30,14 @@ class Detector:
     #: value posted in the Detection.detector field
     name: str = "base"
 
+    #: Per-frame overlay boxes for the live "AI view" (ingest/ai_view.py):
+    #: after each ``process()`` call this holds a list of dicts
+    #: ``{x1, y1, x2, y2, kind: 'vehicle'|'plate', label: str|None}`` in FRAME
+    #: pixel coordinates. Purely informational - it never affects what is
+    #: posted to the backend. The base default is an empty list so callers
+    #: can rely on the attribute for any detector.
+    last_frame_boxes: list = []
+
     def process(self, frame: Any, pts_ms: float, captured_at: Any) -> List[DetectionResult]:
         """Analyse one BGR numpy frame.
 

@@ -15,11 +15,18 @@
 #
 # Usage:  scripts/demo-live.sh
 #         DEMO_CAMS=cam06 ARM_PLATES=GJ1104284,GJ19PE8859 scripts/demo-live.sh
+#         INTERVAL_MS=150 AI_VIEW_PORT=8892 scripts/demo-live.sh
+#   INTERVAL_MS   min stream-PTS gap between analysed frames (default 300;
+#                 lower = more frames analysed = more reads, more CPU)
+#   AI_VIEW_PORT  live annotated "AI view" port (default 8892; 0 disables):
+#                 http://127.0.0.1:8892/ai/<cam>.mjpg
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND="${BACKEND_URL:-http://localhost:8000}"
 CAMS="${DEMO_CAMS:-cam06,cam23}"
 ARM="${ARM_PLATES:-GJ1104284}"
+INTERVAL_MS="${INTERVAL_MS:-300}"
+AI_VIEW_PORT="${AI_VIEW_PORT:-8892}"
 PY="$ROOT/.venv/bin/python"
 
 for u in "$BACKEND/api/stats" "http://localhost:5173/"; do
@@ -101,7 +108,12 @@ EOF
 TAIL=$!
 trap 'kill $TAIL 2>/dev/null || true' EXIT
 
-echo "▶ LIVE ANPR on $CAMS (registry ids $IDS) — open the dashboard ALERTS tab; Ctrl-C to stop"
+echo "▶ LIVE ANPR on $CAMS (registry ids $IDS), interval ${INTERVAL_MS} ms — open the dashboard ALERTS tab; Ctrl-C to stop"
+if [ "$AI_VIEW_PORT" != "0" ]; then
+  echo "▶ AI view (annotated frames, what the model sees):"
+  for c in ${CAMS//,/ }; do echo "    http://127.0.0.1:$AI_VIEW_PORT/ai/$c.mjpg"; done
+fi
 # Foreground (not exec) so the EXIT trap still reaps the read-tail when the
 # worker ends for any reason, not only an interactive Ctrl-C.
-"$PY" "$ROOT/ingest/worker.py" --detector anpr --cameras "$IDS"
+"$PY" "$ROOT/ingest/worker.py" --detector anpr --cameras "$IDS" \
+  --interval-ms "$INTERVAL_MS" --ai-view-port "$AI_VIEW_PORT"

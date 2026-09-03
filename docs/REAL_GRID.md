@@ -84,3 +84,32 @@ Test the credential first:
 `ffplay -rtsp_transport tcp 'rtsp://you%40example.com:ACCESS-PASSWORD@103.250.160.189:8554/stream/cam01'`.
 Note: FFmpeg prints the input URL in its own error lines, so the relay's local
 `ingest/.hls_relay/*/ffmpeg.log` files (gitignored) may contain the credential.
+
+## Demo presets and the live "AI view"
+
+`scripts/live-with-auth.sh` takes a `MODE` (explicit `DEMO_CAMS` / `INTERVAL_MS`
+still override; the active mode is printed at launch):
+
+| MODE | Cameras | Interval | Use |
+|---|---|---|---|
+| `normal` (default) | `cam06,cam23,cam27` | 300 ms | dashboard demo, three feeds side by side |
+| `video` | `cam06` | 150 ms | screen recording: one camera, twice the frames analysed → more reads/min |
+
+```bash
+MODE=video GRID_EMAIL=you@example.com scripts/live-with-auth.sh
+```
+
+`INTERVAL_MS` is the minimum elapsed **stream PTS** between frames handed to
+the detector (`worker.py --interval-ms`); it paces CPU load, never timing.
+
+The worker also serves the **AI view** — the frames it actually analysed, with
+YOLO vehicle boxes (green), localized plates (yellow, labelled with the read
+registration + confidence) and a HUD (camera, UTC capture time, counts) — on a
+loopback port (`--ai-view-port`, default 8892, `AI_VIEW_PORT=0` disables):
+
+    http://127.0.0.1:8892/ai              JSON: camera keys + last-frame age
+    http://127.0.0.1:8892/ai/cam06.jpg    latest annotated frame
+    http://127.0.0.1:8892/ai/cam06.mjpg   ~4 fps MJPEG stream (open in a browser tab / <img>)
+
+Offline check without the grid: `cd ingest && ../.venv/bin/python ai_view_smoke.py /path/to/clip.mp4`
+(writes `deliverables/screenshots/ai_view_sample.jpg`).

@@ -88,6 +88,11 @@ from .base import DetectionResult, Detector
 VEHICLE_CLASS_IDS = (2, 3, 5, 7)
 
 
+def _plate_label(plate: str, confidence: Optional[float]) -> str:
+    """Overlay label for a read plate: 'GJ32AA284 0.99' (or bare plate)."""
+    return f"{plate} {confidence:.2f}" if confidence is not None else plate
+
+
 class AnprDetector(Detector):
     name = "anpr"
 
@@ -177,6 +182,9 @@ class AnprDetector(Detector):
 
         self._recent_plates = {}        # plate -> last emitted pts_ms
         self._last_plateless_pts = None
+        # AI view overlay (see Detector.last_frame_boxes): refreshed on every
+        # process() call, read by capture.CaptureLoop's on_frame hook.
+        self.last_frame_boxes: List[dict] = []
 
     # -------------------------------------------------------------- process
 
@@ -192,14 +200,20 @@ class AnprDetector(Detector):
         results: List[DetectionResult] = []
         best_vehicle: Optional[Tuple[float, Tuple[int, int, int, int]]] = None
         localized_any = False
+        # Overlay boxes for this frame (FRAME coordinates). Informational
+        # only - nothing below reads from it, so emission is unchanged.
+        boxes: List[dict] = []
+        self.last_frame_boxes = boxes
 
         for box in prediction.boxes:
             x1, y1, x2, y2 = (int(round(v)) for v in box.xyxy[0].tolist())
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(width, x2), min(height, y2)
+            conf = float(box.conf[0])
+            boxes.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                          "kind": "vehicle", "label": f"vehicle {conf:.2f}"})
             if (x2 - x1) < self.min_crop_px or (y2 - y1) < self.min_crop_px:
                 continue
-            conf = float(box.conf[0])
             if best_vehicle is None or conf > best_vehicle[0]:
                 best_vehicle = (conf, (x1, y1, x2, y2))
 
@@ -208,9 +222,15 @@ class AnprDetector(Detector):
             # vehicle.
             crop = frame[y1:y2, x1:x2]
             located = self._localize_plate(crop)
+            plate_box = None
             if located is not None:
                 localized_any = True
                 ocr_src = located[0]
+                # Crop coords -> frame coords for the overlay.
+                lx1, ly1, lx2, ly2 = located[1]
+                plate_box = {"x1": x1 + lx1, "y1": y1 + ly1, "x2": x1 + lx2, "y2": y1 + ly2,
+                             "kind": "plate", "label": "plate"}
+                boxes.append(plate_box)
             elif self._plate_detector is None:
                 # Degrade path (open-image-models not installed): OCR the
                 # whole vehicle crop as before.
@@ -222,6 +242,8 @@ class AnprDetector(Detector):
             plate, plate_conf = self._read_plate(self._ocr_input(ocr_src))
             if plate is None:
                 continue
+            if plate_box is not None:
+                plate_box["label"] = _plate_label(plate, plate_conf)
             if not self._should_emit(plate, pts_ms):
                 continue
             results.append(
@@ -247,7 +269,12 @@ class AnprDetector(Detector):
             located = self._localize_plate(frame)
             if located is not None:
                 region, (px1, py1, px2, py2) = located
+                plate_box = {"x1": px1, "y1": py1, "x2": px2, "y2": py2,
+                             "kind": "plate", "label": "plate"}
+                boxes.append(plate_box)
                 plate, plate_conf = self._read_plate(self._ocr_input(region))
+                if plate is not None:
+                    plate_box["label"] = _plate_label(plate, plate_conf)
                 if plate is not None and self._should_emit(plate, pts_ms):
                     if best_vehicle is not None:
                         _, (vx1, vy1, vx2, vy2) = best_vehicle
@@ -300,6 +327,7 @@ class AnprDetector(Detector):
         # plate-less throttle reference PTS values from before the cut.
         self._recent_plates.clear()
         self._last_plateless_pts = None
+        self.last_frame_boxes = []
 
     # -------------------------------------------------------------- helpers
 

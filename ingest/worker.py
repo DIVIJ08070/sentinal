@@ -2,6 +2,7 @@
 
 Usage:
     python worker.py [--detector mock|anpr] [--cameras id1,id2] [--max-cameras N]
+                     [--interval-ms MS] [--ai-view-port PORT]
 
 Flow (docs/CONTRACT.md, ingest module):
     1. POST {BACKEND_URL}/api/cameras/sync   - backend pulls the catalogue
@@ -38,6 +39,8 @@ from detectors import make_detector
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
 DEFAULT_MAX_CAMERAS = 4
+DEFAULT_INTERVAL_MS = 300.0
+DEFAULT_AI_VIEW_PORT = 8892
 SHUTDOWN_JOIN_TIMEOUT_S = 10.0
 
 logger = logging.getLogger("ingest.worker")
@@ -77,6 +80,22 @@ def parse_args(argv=None):
         metavar="N",
         help="maximum concurrent captures (default %(default)s - every client "
         "gets its own stream copy, so pace the load; gateway rule 11)",
+    )
+    parser.add_argument(
+        "--interval-ms",
+        type=float,
+        default=DEFAULT_INTERVAL_MS,
+        metavar="MS",
+        help="minimum elapsed stream PTS between frames handed to the detector "
+        "(default %(default)s; lower = more frames analysed = more reads, more CPU)",
+    )
+    parser.add_argument(
+        "--ai-view-port",
+        type=int,
+        default=DEFAULT_AI_VIEW_PORT,
+        metavar="PORT",
+        help="loopback port for the live annotated 'AI view' "
+        "(http://127.0.0.1:PORT/ai/<cam_key>.mjpg); 0 disables (default %(default)s)",
     )
     return parser.parse_args(argv)
 
@@ -220,6 +239,23 @@ def main(argv=None) -> int:
         except Exception as exc:
             logger.warning("metrics heartbeat failed for camera %s: %s", camera.get("id"), exc)
 
+    # Live AI view (annotated frames) - optional side channel, never fatal:
+    # a busy port logs a warning and the worker runs without it.
+    ai_view = None
+    if args.ai_view_port:
+        try:
+            from ai_view import AiViewServer, cam_key_for
+
+            ai_view = AiViewServer(args.ai_view_port).start()
+            logger.info("AI view: %s", ai_view.url_pattern())
+            logger.info(
+                "AI view streams: %s",
+                "  ".join(f"{ai_view.base_url}/ai/{cam_key_for(c)}.mjpg" for c in cameras),
+            )
+        except Exception as exc:
+            logger.warning("AI view disabled (port %s): %s", args.ai_view_port, exc)
+            ai_view = None
+
     threads = []
     for cam in cameras:
         try:
@@ -238,6 +274,8 @@ def main(argv=None) -> int:
             on_status=on_status,
             on_metrics=on_metrics,
             stop_event=stop_event,
+            process_interval_ms=args.interval_ms,
+            on_frame=ai_view.on_frame if ai_view is not None else None,
         )
         threads.append(
             threading.Thread(target=loop.run, name=f"cam-{cam['id']}", daemon=True)
@@ -253,8 +291,9 @@ def main(argv=None) -> int:
     for thread in threads:
         thread.start()
     logger.info(
-        "ingest worker running: %d camera(s), detector=%s, backend=%s (Ctrl-C to stop)",
-        len(threads), args.detector, BACKEND_URL,
+        "ingest worker running: %d camera(s), detector=%s, interval=%.0f ms, "
+        "backend=%s (Ctrl-C to stop)",
+        len(threads), args.detector, args.interval_ms, BACKEND_URL,
     )
 
     try:
@@ -276,6 +315,8 @@ def main(argv=None) -> int:
             "reaped by the OS): %s",
             stragglers,
         )
+    if ai_view is not None:
+        ai_view.stop()
     client.close()
     logger.info("worker stopped")
     return 0

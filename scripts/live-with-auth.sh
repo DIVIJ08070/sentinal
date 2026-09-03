@@ -7,10 +7,28 @@
 #     mode (worker + read-tail) in the foreground; Ctrl-C stops both
 #
 # Usage:  GRID_EMAIL=you@example.com scripts/live-with-auth.sh
-#         (optional: RELAY_CAMS=cam01,cam04  DEMO_CAMS=cam06,cam23,cam27,cam16  AUTO_ARM=3)
+#         MODE=video GRID_EMAIL=you@example.com scripts/live-with-auth.sh
+#         (optional: RELAY_CAMS=cam01,cam04  DEMO_CAMS=...  INTERVAL_MS=...  AUTO_ARM=3)
+#
+# MODE presets (explicit DEMO_CAMS / INTERVAL_MS always override):
+#   normal (default)  DEMO_CAMS=cam06,cam23,cam27  INTERVAL_MS=300  — the demo
+#                     stars side by side, dashboard-paced
+#   video             DEMO_CAMS=cam06              INTERVAL_MS=150  — ONE camera
+#                     with twice the frames analysed => more plate reads per
+#                     minute; for screen recordings of the AI view + alerts
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="$ROOT/.venv/bin/python"
+
+MODE="${MODE:-normal}"
+case "$MODE" in
+  video)  PRESET_CAMS="cam06";             PRESET_INTERVAL=150 ;;
+  normal) PRESET_CAMS="cam06,cam23,cam27"; PRESET_INTERVAL=300 ;;
+  *) echo "✗ unknown MODE=$MODE (expected normal or video)"; exit 1 ;;
+esac
+DEMO_CAMS="${DEMO_CAMS:-$PRESET_CAMS}"
+INTERVAL_MS="${INTERVAL_MS:-$PRESET_INTERVAL}"
+echo "• mode: $MODE — cameras $DEMO_CAMS, analysis interval ${INTERVAL_MS} ms"
 
 EMAIL="${GRID_EMAIL:-}"
 [ -z "$EMAIL" ] && read -r -p "Registered email: " EMAIL
@@ -39,4 +57,5 @@ else
   echo "▶ relay started (pid $RELAY, log /tmp/sentinel-relay.log)"
 fi
 
-AUTO_ARM="${AUTO_ARM:-3}" DEMO_CAMS="${DEMO_CAMS:-cam06,cam23,cam27,cam16}" "$ROOT/scripts/demo-live.sh"
+AUTO_ARM="${AUTO_ARM:-3}" DEMO_CAMS="$DEMO_CAMS" INTERVAL_MS="$INTERVAL_MS" \
+  AI_VIEW_PORT="${AI_VIEW_PORT:-8892}" "$ROOT/scripts/demo-live.sh"

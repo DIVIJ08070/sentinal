@@ -41,6 +41,7 @@ class MockDetector(Detector):
         self.plate_confidence = float(plate_confidence)
         self.downsample = max(1, int(downsample))
 
+        self.last_frame_boxes = []  # AI view overlay: the mock has no boxes
         self._prev = None          # previous downsampled grayscale frame
         self._motion_frames = 0    # motion-gated frames since last reset
         self._emitted = 0          # total plates emitted (survives reset so
