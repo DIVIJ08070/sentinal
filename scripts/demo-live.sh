@@ -52,9 +52,26 @@ for p in plates:
 EOF
 
 # Live tail of plate reads (new rows only), beside the worker output.
-"$PY" - "$BACKEND" <<'EOF' &
+# AUTO_ARM=N (default 3): the first N high-confidence live reads that are not
+# yet on the watchlist get added automatically, so each such vehicle raises a
+# REAL alert when its camera's loop brings it round again. Set AUTO_ARM=0 to
+# disable.
+"$PY" - "$BACKEND" "${AUTO_ARM:-3}" <<'EOF' &
 import json, sys, time, urllib.request
-backend, seen, first = sys.argv[1], set(), True
+backend, auto_arm = sys.argv[1], int(sys.argv[2])
+seen, first, armed = set(), True, 0
+try:
+    listed = {w["plate"] for w in json.load(urllib.request.urlopen(f"{backend}/api/watchlist"))}
+except Exception:
+    listed = set()
+
+def arm(plate, cam):
+    body = json.dumps({"plate": plate, "category": "stolen", "priority": "high",
+                       "label": f"Live demo — auto-armed from a live read on camera {cam}"}).encode()
+    req = urllib.request.Request(f"{backend}/api/watchlist", data=body,
+                                 headers={"Content-Type": "application/json"})
+    urllib.request.urlopen(req).read()
+
 print("── live plate reads (only reads that land from now on) ───────────")
 while True:
     try:
@@ -69,8 +86,16 @@ while True:
     for d in reversed(rows):
         if d.get("plate") and d["id"] not in seen:
             seen.add(d["id"])
+            conf = d.get("plate_confidence") or 0
             print(f"  {d['captured_at'][11:19]}  cam {d['camera_id']:<3} plate {d['plate']:<11} "
-                  f"conf {d.get('plate_confidence') or 0:.2f}", flush=True)
+                  f"conf {conf:.2f}", flush=True)
+            if armed < auto_arm and conf >= 0.6 and d["plate"] not in listed:
+                try:
+                    arm(d["plate"], d["camera_id"]); listed.add(d["plate"]); armed += 1
+                    print(f"  ⚡ auto-armed {d['plate']} — alert fires when camera "
+                          f"{d['camera_id']} loops back to it", flush=True)
+                except Exception as exc:
+                    print(f"  (auto-arm failed: {exc})", flush=True)
     time.sleep(3)
 EOF
 TAIL=$!
