@@ -75,6 +75,81 @@ export function dossierPdfUrl(plate, params = {}) {
   return `${API_BASE}/vehicles/${encodeURIComponent(plate)}/dossier.pdf${encoded ? `?${encoded}` : ''}`;
 }
 
+// ---- AI view (annotated MJPEG from the live ANPR worker) --------------------
+// The ANPR worker publishes per-camera MJPEG streams with the detection
+// overlay on a separate small HTTP server (default :8892). It is NOT proxied
+// through Vite: the browser connects directly, so the base is absolute and
+// overridable via VITE_AI_VIEW_BASE at build time.
+
+export const AI_VIEW_BASE = (import.meta.env.VITE_AI_VIEW_BASE || 'http://localhost:8892').replace(
+  /\/+$/,
+  ''
+);
+
+// Key the AI-view server uses for a camera: the catalogue external id
+// (cam06...) when present, else the registry id.
+export function aiViewKey(camera) {
+  if (!camera) return null;
+  return String(camera.external_id || camera.id);
+}
+
+export function aiViewStreamUrl(key) {
+  return `${AI_VIEW_BASE}/ai/${encodeURIComponent(key)}.mjpg`;
+}
+
+// Normalises whatever `GET {AI_VIEW_BASE}/ai` returns into a Set of camera
+// keys. Tolerates: ["cam06", ...], [{key|camera|external_id|id|name|url}],
+// {cameras|streams: [...]} or a plain {cam06: {...}} map.
+function collectAiKeys(node, out) {
+  if (node == null) return;
+  if (typeof node === 'string' || typeof node === 'number') {
+    const m = String(node).match(/\/ai\/([^/?#]+?)(?:\.mjpg)?(?:[?#].*)?$/);
+    out.add(m ? decodeURIComponent(m[1]) : String(node));
+    return;
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) collectAiKeys(item, out);
+    return;
+  }
+  if (typeof node === 'object') {
+    for (const listKey of ['cameras', 'streams', 'ai', 'items', 'keys']) {
+      if (Array.isArray(node[listKey])) {
+        collectAiKeys(node[listKey], out);
+        return;
+      }
+    }
+    let hit = false;
+    for (const field of ['key', 'camera', 'external_id', 'cam', 'id', 'name', 'url', 'path']) {
+      const v = node[field];
+      if (typeof v === 'string' || typeof v === 'number') {
+        collectAiKeys(v, out);
+        hit = true;
+      }
+    }
+    if (!hit) for (const k of Object.keys(node)) out.add(k);
+  }
+}
+
+// Resolves to a Set of keys currently under live analysis; rejects when the
+// AI-view server is unreachable or answers with something that is not JSON.
+export async function aiViewList() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const response = await fetch(`${AI_VIEW_BASE}/ai`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    const data = await response.json();
+    const keys = new Set();
+    collectAiKeys(data, keys);
+    return keys;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---- Shared display helpers -------------------------------------------------
 // All backend timestamps are UTC ISO8601 with Z. Display rule: render in the
 // browser's local timezone, keep the raw ISO string in the title tooltip.

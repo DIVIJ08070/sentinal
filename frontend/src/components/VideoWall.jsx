@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { HlsPlayer } from './CameraDrawer.jsx';
+import { StreamView } from './CameraDrawer.jsx';
 
 const TILE_COUNT = 4;
 
@@ -70,7 +70,7 @@ export default function VideoWall({ cameras, onClose }) {
                   </div>
                   <div className="wall-tile-stream">
                     {camera ? (
-                      <HlsPlayer key={camera.id} src={camera.hls_url} />
+                      <StreamView key={camera.id} camera={camera} scope={`wall.${i}`} compact />
                     ) : (
                       <div className="stream-fallback">No camera selected.</div>
                     )}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { formatLocal } from '../api.js';
+import { AI_VIEW_BASE, aiViewKey, aiViewList, aiViewStreamUrl, formatLocal } from '../api.js';
 
 /**
  * Shared HLS player. Attaches hls.js when supported (falls back to native HLS
@@ -138,6 +138,174 @@ export function HlsPlayer({ src }) {
   );
 }
 
+// ---- AI view ---------------------------------------------------------------
+
+const AI_PROBE_INTERVAL_MS = 10000;
+const VIEW_STORAGE_PREFIX = 'sentinel.streamView.';
+
+function readStoredMode(scope) {
+  try {
+    const v = sessionStorage.getItem(VIEW_STORAGE_PREFIX + scope);
+    return v === 'ai' ? 'ai' : 'live';
+  } catch {
+    return 'live';
+  }
+}
+
+function storeMode(scope, mode) {
+  try {
+    sessionStorage.setItem(VIEW_STORAGE_PREFIX + scope, mode);
+  } catch {
+    // Storage blocked (private mode / quota) — the toggle still works, it
+    // simply is not remembered.
+  }
+}
+
+/**
+ * Availability of the AI (annotated MJPEG) view for one camera.
+ * Probes `${AI_VIEW_BASE}/ai` when `active` becomes true and every 10 s while
+ * it stays true. Result:
+ *   status: 'idle' | 'probing' | 'ready' | 'missing' | 'offline'
+ *   key:    the stream key to use (external_id preferred, registry id accepted
+ *           when that is what the server lists)
+ */
+function useAiViewAvailability(camera, active) {
+  const preferredKey = aiViewKey(camera);
+  const registryKey = camera ? String(camera.id) : null;
+  const [state, setState] = useState({ status: 'idle', key: preferredKey });
+
+  useEffect(() => {
+    if (!active || !camera) {
+      setState({ status: 'idle', key: preferredKey });
+      return undefined;
+    }
+    let cancelled = false;
+    setState((prev) =>
+      prev.status === 'ready' && (prev.key === preferredKey || prev.key === registryKey)
+        ? prev
+        : { status: 'probing', key: preferredKey }
+    );
+
+    const probe = async () => {
+      try {
+        const keys = await aiViewList();
+        if (cancelled) return;
+        const key = keys.has(preferredKey)
+          ? preferredKey
+          : registryKey && keys.has(registryKey)
+            ? registryKey
+            : null;
+        setState(key ? { status: 'ready', key } : { status: 'missing', key: preferredKey });
+      } catch {
+        if (!cancelled) setState({ status: 'offline', key: preferredKey });
+      }
+    };
+    probe();
+    const timer = setInterval(probe, AI_PROBE_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // camera identity, not the object, drives re-probing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, preferredKey, registryKey]);
+
+  return state;
+}
+
+function AiViewUnavailable({ status }) {
+  return (
+    <div className="stream-fallback ai-view-fallback">
+      <div className="ai-view-fallback-title">AI view not available for this camera</div>
+      <div>
+        AI view is available only for cameras under live ANPR analysis (start
+        scripts/live-with-auth.sh with this camera in DEMO_CAMS)
+      </div>
+      <div className="ai-view-fallback-sub">
+        {status === 'offline'
+          ? `AI-view server not reachable at ${AI_VIEW_BASE} · re-checking every 10 s`
+          : status === 'probing'
+            ? 'checking live analysis…'
+            : 're-checking every 10 s'}
+      </div>
+    </div>
+  );
+}
+
+function AiView({ camera, active }) {
+  const avail = useAiViewAvailability(camera, active);
+  // A nonce forces the browser to open a fresh multipart connection when the
+  // stream becomes ready again after an error or a camera switch.
+  const [nonce, setNonce] = useState(0);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setImgFailed(false);
+    setNonce((n) => n + 1);
+  }, [avail.status, avail.key]);
+
+  if (avail.status !== 'ready' || imgFailed) {
+    return <AiViewUnavailable status={imgFailed ? 'offline' : avail.status} />;
+  }
+  return (
+    <img
+      className="ai-view-img"
+      src={`${aiViewStreamUrl(avail.key)}?t=${nonce}`}
+      alt={`AI view — ${camera.name}`}
+      onError={() => setImgFailed(true)}
+    />
+  );
+}
+
+/**
+ * Stream area with a "Live video | AI view" segmented toggle.
+ * Live video = HlsPlayer (unchanged); AI view = annotated MJPEG from the ANPR
+ * worker. The last choice is remembered per browser session (per `scope`).
+ * `compact` = video-wall tile layout (fills its parent instead of 16:9 box).
+ */
+export function StreamView({ camera, scope = 'drawer', compact = false }) {
+  const [mode, setMode] = useState(() => readStoredMode(scope));
+  const choose = (next) => {
+    setMode(next);
+    storeMode(scope, next);
+  };
+  const ai = mode === 'ai';
+
+  return (
+    <div className={`stream-view${compact ? ' compact' : ''}`}>
+      <div className="stream-view-bar">
+        <div className="seg-toggle" role="group" aria-label="Stream view">
+          <button
+            type="button"
+            className={`seg-btn${!ai ? ' active' : ''}`}
+            aria-pressed={!ai}
+            onClick={() => choose('live')}
+          >
+            Live video
+          </button>
+          <button
+            type="button"
+            className={`seg-btn${ai ? ' active' : ''}`}
+            aria-pressed={ai}
+            onClick={() => choose('ai')}
+          >
+            AI view
+          </button>
+        </div>
+        {ai && (
+          <span className="ai-view-caption">
+            <span className="ai-view-caption-dot" />
+            AI VIEW · live ANPR overlay
+          </span>
+        )}
+      </div>
+      <div className={compact ? 'stream-view-body' : 'stream-box'}>
+        {ai ? <AiView camera={camera} active={ai} /> : <HlsPlayer src={camera.hls_url} />}
+      </div>
+    </div>
+  );
+}
+
 function MetaRow({ k, v, mono, title }) {
   return (
     <>
@@ -163,9 +331,7 @@ export default function CameraDrawer({ camera, onClose }) {
       </div>
 
       <div className="drawer-body">
-        <div className="stream-box">
-          <HlsPlayer src={camera.hls_url} />
-        </div>
+        <StreamView key={camera.id} camera={camera} scope="drawer" />
 
         <div className="meta-grid">
           <MetaRow
