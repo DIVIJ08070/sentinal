@@ -8,13 +8,20 @@
 // never changes what the backend stored.
 //
 // Two rules decide "same vehicle":
-//   1. same camera, sightings <= PASS_WINDOW_MS apart, plates >= 50% similar
-//      -> one pass of one vehicle (OCR variants within seconds);
+//   1. same camera, sightings <= PASS_WINDOW_MS apart, plates >= PASS_SIMILARITY
+//      similar -> one pass of one vehicle (OCR variants of consecutive frames);
 //   2. plates within one edit of each other (any camera, any time)
 //      -> the same vehicle identity (later passes, small misreads).
-// Union-find merges transitively, so A~B and B~C thread A, B and C together.
+// Union-find merges transitively, so A~B and B~C thread A, B and C together —
+// which is exactly why rule 1 must be tight: at a busy stop-line several
+// DIFFERENT vehicles pass within ten seconds, and any two Gujarat plates share
+// "GJ" plus a few digits, so a loose window/similarity chained a scooter to
+// two cars. Real OCR variants of one vehicle come from consecutive frames
+// within ~1-2 s and differ by only a character or two.
 
-const PASS_WINDOW_MS = 10_000;
+const PASS_WINDOW_MS = 3_000;
+const PASS_SIMILARITY = 0.7;
+const MIN_PLATE_LEN = 6;
 const NEW_PASS_GAP_MS = 60_000;
 
 export function editDistance(a, b) {
@@ -78,9 +85,10 @@ export function groupAlerts(alerts) {
       const b = alerts[j];
       const pa = a.plate || '';
       const pb = b.plate || '';
+      if (pa.length < MIN_PLATE_LEN || pb.length < MIN_PLATE_LEN) continue;
       const sameCamera = a.camera_id != null && a.camera_id === b.camera_id;
       const dt = Math.abs(times[i] - times[j]);
-      if (sameCamera && dt <= PASS_WINDOW_MS && similarity(pa, pb) >= 0.5) union(i, j);
+      if (sameCamera && dt <= PASS_WINDOW_MS && similarity(pa, pb) >= PASS_SIMILARITY) union(i, j);
       else if (editDistance(pa, pb) <= 1) union(i, j);
     }
   }
