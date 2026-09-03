@@ -54,6 +54,9 @@ export const api = {
   addWatchlistEntry: (entry) => request('/watchlist', { method: 'POST', body: entry }),
   updateWatchlistEntry: (id, patch) => request(`/watchlist/${id}`, { method: 'PATCH', body: patch }),
   deleteWatchlistEntry: (id) => request(`/watchlist/${id}`, { method: 'DELETE' }),
+  // Retroactive matching: raise alerts for recent sightings of watchlist plates.
+  rescanWatchlist: (sinceHours = 24) =>
+    request('/watchlist/rescan', { method: 'POST', params: { since_hours: sinceHours } }),
 
   // Detections & route reconstruction
   detections: (params) => request('/detections', { params }),

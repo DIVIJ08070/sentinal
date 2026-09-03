@@ -129,3 +129,19 @@ Nothing is deleted — it is a view filter. Consequences for the take:
   pass of that vehicle on its camera, ~12.6 min apart on cam06 — say on camera that looped sandbox
   footage cannot host a cross-camera journey; the same engine reconstructs one on the evaluation grid.
 - `scripts/demo.sh` / `ingest/simulator.py` are no longer needed for the live demo.
+
+---
+
+## 8. The "re-scan" beat — many genuine alerts, on demand, on camera
+
+WATCHLIST tab → **Re-scan recent sightings**. The platform correlates every active watchlist
+plate against the last 24 h of live sightings and raises an alert for each match that has none
+yet — same matcher, same physics check as live alerts — and pushes them over the WebSocket, so
+the ALERTS tab fills with genuine cards (real vehicle crops) while you watch.
+
+Narration: *"A stolen-vehicle report just landed on the watchlist. The control room doesn't only
+want the next sighting — it wants to know if the car was already seen. One click: every recent
+sighting is correlated, and here they come — each with the frame the camera captured."*
+
+Do this beat ONCE per take (history is consumed once it's alerted); live alerts keep firing after
+it as vehicles loop back (~12.6 min on cam06).

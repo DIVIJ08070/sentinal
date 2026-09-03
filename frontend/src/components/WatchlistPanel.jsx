@@ -17,6 +17,29 @@ export default function WatchlistPanel({ onStatsChanged }) {
   const [error, setError] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanNote, setRescanNote] = useState(null);
+
+  // Retroactive matching: when a plate lands on the watchlist, the control
+  // room wants to know at once whether it was already seen — not only from
+  // the next frame onward. Raises alerts for unmatched recent sightings.
+  const rescan = async () => {
+    setRescanning(true);
+    setRescanNote(null);
+    try {
+      const r = await api.rescanWatchlist(24);
+      setRescanNote(
+        r.created > 0
+          ? `${r.created} alert${r.created === 1 ? '' : 's'} raised from ${r.scanned} sightings in the last 24 h — see ALERTS`
+          : `No new matches in the last 24 h (${r.scanned} sightings checked)`
+      );
+      if (onStatsChanged) onStatsChanged();
+    } catch (err) {
+      setError(`Re-scan failed: ${err.message}`);
+    } finally {
+      setRescanning(false);
+    }
+  };
 
   const load = async () => {
     try {
@@ -84,7 +107,16 @@ export default function WatchlistPanel({ onStatsChanged }) {
     <div>
       <div className="panel-title">
         <span>Watchlist ({entries.length})</span>
+        <button
+          className="btn btn-amber btn-small"
+          onClick={rescan}
+          disabled={rescanning}
+          title="Retroactive matching: check the last 24 h of sightings against every active plate and raise alerts for matches"
+        >
+          {rescanning ? 'Re-scanning…' : 'Re-scan recent sightings'}
+        </button>
       </div>
+      {rescanNote && <div className="wl-label rescan-note">{rescanNote}</div>}
 
       {error && <div className="error-note">{error}</div>}
 
