@@ -44,3 +44,30 @@ are scrolling before you start recording** — that is your cue.
 - No reads for >2 min → run `loop_phase.py` again, switch `DEMO_CAMS` to a READY camera, restart `demo-live.sh`.
 - Video tile says *Connecting…* → non-warm camera; give it up to a minute, or click a warm one (Chiman bhai Bridge, Paldi Circle, Visat Teen Rasta, Visat P2, cam23, cam27).
 - Alert not firing → open **WATCHLIST**, add the exact plate string you see scrolling in the terminal; the next read of it fires the alert.
+
+---
+
+## 4. VIDEO A on the government sandbox cameras ("CCTV cameras of your choice")
+
+The own-feed rule allows any camera you choose. Using the sandbox is genuinely live and
+needs no filming — but Video A must then visibly do the OWN-FEED jobs (choose + onboard a
+camera, live viewing, ANPR, watchlist correlation, alert), not repeat Video B's catalogue tour.
+
+Pre-flight (same as §0): run `loop_phase.py`, start `demo-live.sh` on the READY cameras,
+wait for reads to scroll. Keep the ALERTS tab open and the terminal beside it.
+
+| Beat | Do | Say |
+|---|---|---|
+| A1 (0:00) | CAMERAS tab, filter to the READY camera (e.g. *Timbavadi Gate, Junagadh*) | "For the own-feed demo I'm choosing one live camera from the grid — Timbavadi Gate, Junagadh." |
+| A2 (0:15) | Click it → live video plays; point at its RTSP URL in the drawer | "Onboarded from its RTSP stream over TCP — any vendor camera integrates the same way, no change to the source." |
+| A3 (0:40) | Terminal: plate reads scrolling | "The AI pipeline is reading plates off this feed right now — vehicle detection, plate localisation, OCR — each read PTS-timestamped with a confidence." |
+| A4 (1:05) | WATCHLIST tab: show the armed plate(s); if a fresh read scrolled, add THAT plate live | "Vehicles of interest live here — I'm adding a plate this camera just read." |
+| A5 (1:25) | ALERTS tab: the alert fires when the vehicle returns (or show the most recent live alert card if you're editing clips together) | "The moment the camera sees it again — alert, under a second, with the camera frame as evidence." |
+| A6 (1:50) | Click the alert snapshot | "That is the actual frame the camera captured — camera-based, not typed in." |
+| A7 (2:05) | ROUTE tab: trace that plate; Export Evidence Dossier | "Every sighting, timestamped, on the map — and a hash-sealed dossier in one click." |
+| A8 (2:30) | Close on the map | "Live camera in, court-ready evidence out, in under three minutes." |
+
+Recording tip: the alert in A5 depends on the vehicle's loop returning. Record A1–A4 and
+A6–A8 in one take, then keep a background QuickTime recording running until the alert
+fires (I will ping you the exact time) and splice that 20-second clip in as A5. Say
+plainly on camera that the footage loops.
