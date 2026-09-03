@@ -155,6 +155,18 @@ class CaptureLoop:
         self.on_metrics = on_metrics
         self.on_frame = on_frame
         self.stop_event = stop_event if stop_event is not None else threading.Event()
+        # Inference runs on its OWN thread with a single-slot "latest frame"
+        # mailbox: the reader thread decodes and publishes every frame in real
+        # time and never waits for YOLO/OCR; if inference is still busy when
+        # the next frame is due, the waiting frame is replaced (drop-stale).
+        # Without this, 300-500 ms of inference per frame stalled the RTSP
+        # read loop, frames queued in the transport buffer and the AI view
+        # arrived late and in bursts while the (decode-free) relay stayed smooth.
+        self._infer_lock = threading.Lock()
+        self._infer_ready = threading.Condition(self._infer_lock)
+        self._infer_slot = None
+        self._infer_stop = threading.Event()
+        self._infer_thread = None
         self.process_interval_ms = float(process_interval_ms)
         self.metrics_interval_s = float(metrics_interval_s)
 
@@ -191,6 +203,11 @@ class CaptureLoop:
         if not self.rtsp_url and not self.hls_url:
             logger.error("[%s] camera record has neither rtsp_url nor hls_url - nothing to capture", self.name)
             return
+        self._infer_stop.clear()
+        self._infer_thread = threading.Thread(
+            target=self._inference_loop, name=f"infer-{self.name}", daemon=True
+        )
+        self._infer_thread.start()
         try:
             while not self.stop_event.is_set():
                 cap = self._connect()
@@ -204,6 +221,11 @@ class CaptureLoop:
                     cap.release()
                 self._notify_status("down")
         finally:
+            self._infer_stop.set()
+            with self._infer_lock:
+                self._infer_ready.notify_all()
+            if self._infer_thread is not None:
+                self._infer_thread.join(timeout=15)
             self._notify_status("down")
             logger.info("[%s] capture loop stopped", self.name)
 
@@ -406,26 +428,49 @@ class CaptureLoop:
                     )
                 continue
 
+            # Publish EVERY decoded, non-concealed frame to the AI view with
+            # the detector's latest boxes. The reader never waits for
+            # inference, so the overlay stream stays real-time (boxes refresh
+            # as each analysed result lands, a fraction of a second later).
+            if self.on_frame is not None:
+                try:
+                    self.on_frame(
+                        self.camera, frame,
+                        getattr(self.detector, "last_frame_boxes", []),
+                        pts, captured_at,
+                    )
+                except Exception:
+                    logger.exception("[%s] frame callback failed", self.name)
+
             # Load pacing by elapsed PTS - never by fps or frame counts.
             if (
                 last_processed_pts is not None
                 and (pts - last_processed_pts) < self.process_interval_ms
             ):
-                # Not analysed (pacing) — still hand the frame to the AI view
-                # with the detector's LATEST boxes, so the overlay stream is
-                # fluid video rather than a slideshow of analysed frames.
-                if self.on_frame is not None:
-                    try:
-                        self.on_frame(
-                            self.camera, frame,
-                            getattr(self.detector, "last_frame_boxes", []),
-                            pts, captured_at,
-                        )
-                    except Exception:
-                        logger.exception("[%s] frame callback failed", self.name)
                 continue
             last_processed_pts = pts
 
+            # Hand the frame to the inference thread (latest-frame mailbox).
+            self._submit_for_inference(frame, pts, captured_at)
+
+    # ---------------------------------------------------------- inference
+
+    def _submit_for_inference(self, frame, pts, captured_at):
+        """Replace whatever frame is waiting; never blocks the reader."""
+        with self._infer_lock:
+            self._infer_slot = (frame, pts, captured_at)
+            self._infer_ready.notify()
+
+    def _inference_loop(self):
+        """Detector thread: always processes the LATEST submitted frame."""
+        while not self._infer_stop.is_set():
+            with self._infer_lock:
+                while self._infer_slot is None and not self._infer_stop.is_set():
+                    self._infer_ready.wait(timeout=0.5)
+                if self._infer_stop.is_set():
+                    return
+                frame, pts, captured_at = self._infer_slot
+                self._infer_slot = None
             try:
                 results = self.detector.process(frame, pts, captured_at)
             except Exception:
@@ -436,18 +481,6 @@ class CaptureLoop:
                     self.on_detection(self.camera, result, pts, captured_at)
                 except Exception:
                     logger.exception("[%s] detection callback failed", self.name)
-            if self.on_frame is not None:
-                # Live AI view: annotated-frame hook. Overlay boxes are the
-                # detector's per-frame side channel; the hook must never
-                # affect capture or detection.
-                try:
-                    self.on_frame(
-                        self.camera, frame,
-                        getattr(self.detector, "last_frame_boxes", []),
-                        pts, captured_at,
-                    )
-                except Exception:
-                    logger.exception("[%s] frame callback failed", self.name)
 
     # ------------------------------------------------------------ quality
 

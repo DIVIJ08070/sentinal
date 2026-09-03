@@ -39,8 +39,8 @@ import cv2
 import numpy as np
 
 DEFAULT_PORT = 8892
-MAX_WIDTH = 960                 # downscale before drawing so lines stay crisp
-JPEG_QUALITY = 75
+MAX_WIDTH = 1280                # downscale before drawing so lines stay crisp (fullscreen-sharp)
+JPEG_QUALITY = 82
 STREAM_PART_SLEEP_S = 0.1       # ~10 fps MJPEG
 VEHICLE_COLOR = (0, 200, 90)    # BGR green
 PLATE_COLOR = (0, 215, 255)     # BGR yellow
