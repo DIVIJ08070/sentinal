@@ -54,13 +54,18 @@ EOF
 # Live tail of plate reads (new rows only), beside the worker output.
 "$PY" - "$BACKEND" <<'EOF' &
 import json, sys, time, urllib.request
-backend, seen = sys.argv[1], set()
-print("── live plate reads ──────────────────────────────────────────")
+backend, seen, first = sys.argv[1], set(), True
+print("── live plate reads (only reads that land from now on) ───────────")
 while True:
     try:
         rows = json.load(urllib.request.urlopen(f"{backend}/api/detections?limit=30"))
     except Exception:
         time.sleep(3); continue
+    if first:
+        # Seed with history so the terminal shows ONLY new, live reads —
+        # otherwise the first poll dumps the last 30 stored rows on camera.
+        seen.update(d["id"] for d in rows); first = False
+        continue
     for d in reversed(rows):
         if d.get("plate") and d["id"] not in seen:
             seen.add(d["id"])
@@ -72,4 +77,6 @@ TAIL=$!
 trap 'kill $TAIL 2>/dev/null || true' EXIT
 
 echo "▶ LIVE ANPR on $CAMS (registry ids $IDS) — open the dashboard ALERTS tab; Ctrl-C to stop"
-exec "$PY" "$ROOT/ingest/worker.py" --detector anpr --cameras "$IDS"
+# Foreground (not exec) so the EXIT trap still reaps the read-tail when the
+# worker ends for any reason, not only an interactive Ctrl-C.
+"$PY" "$ROOT/ingest/worker.py" --detector anpr --cameras "$IDS"
