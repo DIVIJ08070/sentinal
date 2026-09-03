@@ -320,6 +320,12 @@ class CaptureLoop:
         last_processed_pts = None
         read_failures = 0
         corrupt_frames = 0
+        # File sources (own-footage demos, smoke clips) have no real-time
+        # clock: pace them to their PTS so detections, timestamps and the AI
+        # view run at the footage's true speed. Live RTSP/HLS is never slept.
+        is_file = not str(self.rtsp_url or self.hls_url or "").lower().startswith(("rtsp://", "http://", "https://"))
+        pace_wall = None
+        pace_pts = None
 
         # Health metrics (wall-clock based; NEVER used for frame timing).
         # fps_measured = frame-count delta over wall time - a measurement of
@@ -416,6 +422,16 @@ class CaptureLoop:
 
             captured_at = anchor_wall + timedelta(milliseconds=pts - anchor_pts)
             last_pts = pts
+
+            if is_file:
+                now_m = time.monotonic()
+                if pace_wall is not None and pace_pts is not None and pts >= pace_pts:
+                    due = pace_wall + (pts - pace_pts) / 1000.0
+                    if due > now_m:
+                        if self.stop_event.wait(min(due - now_m, 1.0)):
+                            return
+                else:
+                    pace_wall, pace_pts = now_m, pts  # (re)anchor real-time pacing
 
             # Skip decoder-concealment frames (see CORRUPT_FLAT_FRACTION).
             if self._looks_concealed(frame):
