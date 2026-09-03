@@ -33,3 +33,7 @@ scripts/vendor/
 
 # HLS relay segment cache (regenerated at runtime by ingest/hls_relay.py)
 ingest/.hls_relay/
+
+# assembled upload bundle (duplicates tracked deliverables)
+deliverables/SUBMISSION_UPLOAD/
+deliverables/*.zip
