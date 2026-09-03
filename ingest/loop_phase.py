@@ -54,7 +54,8 @@ def main():
     for cam in [c.strip() for c in args.cams.split(",") if c.strip()]:
         img = grab(cam)
         if img is None:
-            rows.append((cam, None, None, "no frame (stream busy?)"))
+            rows.append((cam, None, None, KNOWN_READ_RATE.get(cam, 0.0),
+                         "no frame (handshake slow — stream busy serving the worker/relay)"))
             continue
         bright = float(img.mean())
         n = len(yolo.predict(img, conf=0.35, classes=[2, 3, 5, 7], verbose=False)[0].boxes)
