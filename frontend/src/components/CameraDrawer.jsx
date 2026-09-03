@@ -244,16 +244,69 @@ function AiView({ camera, active }) {
     setNonce((n) => n + 1);
   }, [avail.status, avail.key]);
 
+  // Fullscreen: an <img> has no native fullscreen control (unlike <video>),
+  // so offer one via the Fullscreen API on the wrapper. Double-click toggles
+  // too; Esc exits (browser default).
+  const wrapRef = useRef(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => setFullscreen(document.fullscreenElement === wrapRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    document.addEventListener('webkitfullscreenchange', onChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      document.removeEventListener('webkitfullscreenchange', onChange);
+    };
+  }, []);
+  const toggleFullscreen = () => {
+    const el = wrapRef.current;
+    if (!el) return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      try { const p = exit.call(document); if (p && p.catch) p.catch(() => {}); } catch (_e) { /* noop */ }
+      return;
+    }
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) return;
+    try { const p = req.call(el); if (p && p.catch) p.catch(() => {}); } catch (_e) { /* noop */ }
+  };
+
   if (avail.status !== 'ready' || imgFailed) {
     return <AiViewUnavailable status={imgFailed ? 'offline' : avail.status} />;
   }
   return (
-    <img
-      className="ai-view-img"
-      src={`${aiViewStreamUrl(avail.key)}?t=${nonce}`}
-      alt={`AI view — ${camera.name}`}
-      onError={() => setImgFailed(true)}
-    />
+    <div
+      ref={wrapRef}
+      className={`ai-view-wrap${fullscreen ? ' fullscreen' : ''}`}
+      onDoubleClick={toggleFullscreen}
+      title="Double-click for fullscreen · Esc to exit"
+    >
+      <img
+        className="ai-view-img"
+        src={`${aiViewStreamUrl(avail.key)}?t=${nonce}`}
+        alt={`AI view — ${camera.name}`}
+        onError={() => setImgFailed(true)}
+      />
+      <div className="ai-view-controls">
+        <button
+          type="button"
+          className="ai-view-btn"
+          onClick={toggleFullscreen}
+          title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (or double-click)'}
+        >
+          {fullscreen ? '⤡ Exit' : '⛶ Fullscreen'}
+        </button>
+        <a
+          className="ai-view-btn"
+          href={aiViewStreamUrl(avail.key)}
+          target="_blank"
+          rel="noreferrer"
+          title="Open the AI stream in its own tab"
+        >
+          ↗ New tab
+        </a>
+      </div>
+    </div>
   );
 }
 
