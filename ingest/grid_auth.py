@@ -13,13 +13,19 @@ Caveat: FFmpeg echoes the input URL in its own error lines, so the relay's
 per-camera `ffmpeg.log` files (gitignored, local) may contain the credential.
 """
 import os
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 ENV_VAR = "GRID_RTSP_AUTH"
 
 
 def with_rtsp_auth(url: str) -> str:
-    """Return `url` with user:password injected, if configured and absent."""
+    """Return `url` with user:password injected, if configured and absent.
+
+    The gateway scheme is `rtsp://<email>:<password>@host/...` with the email's
+    `@` percent-encoded as `%40`. GRID_RTSP_AUTH may be given either raw
+    (`alice@example.com:secret`) or pre-encoded (`alice%40example.com:secret`);
+    both are normalised (unquote, then quote) so `@` never double-encodes.
+    """
     auth = os.environ.get(ENV_VAR, "").strip()
     if not auth or not url or not url.lower().startswith("rtsp://"):
         return url
@@ -27,7 +33,9 @@ def with_rtsp_auth(url: str) -> str:
     if "@" in parts.netloc:  # already carries credentials
         return url
     user, _, password = auth.partition(":")
-    netloc = f"{quote(user, safe='')}:{quote(password, safe='')}@{parts.netloc}"
+    user_q = quote(unquote(user), safe="")
+    pass_q = quote(unquote(password), safe="")
+    netloc = f"{user_q}:{pass_q}@{parts.netloc}"
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
