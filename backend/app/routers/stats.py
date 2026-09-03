@@ -10,6 +10,14 @@ from ..models import Alert, Camera, Detection, WatchlistEntry, utcnow
 router = APIRouter(tags=["stats"])
 
 
+def _iso(dt):
+    """UTC ISO8601 with a trailing Z (stored datetimes are naive UTC)."""
+    if dt is None:
+        return None
+    text = dt.isoformat()
+    return text.replace("+00:00", "Z") if dt.tzinfo else text + "Z"
+
+
 @router.get("/stats")
 def get_stats(db: Session = Depends(get_db)):
     status_counts = dict(
@@ -40,4 +48,9 @@ def get_stats(db: Session = Depends(get_db)):
         .filter(Alert.status == "new")
         .scalar() or 0,
         "alerts_total": db.query(func.count(Alert.id)).scalar() or 0,
+        # Liveness heartbeat for the dashboard: when the pipeline last delivered
+        # a detection / raised an alert (server receive time, so it reflects
+        # "is data arriving now", independent of stream PTS).
+        "last_detection_at": _iso(db.query(func.max(Detection.created_at)).scalar()),
+        "last_alert_at": _iso(db.query(func.max(Alert.created_at)).scalar()),
     }

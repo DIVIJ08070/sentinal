@@ -78,3 +78,22 @@ plainly on camera that the footage loops.
   and the relay: `export GRID_RTSP_AUTH='your-registered-email@domain:ACCESS-PASSWORD'`
   (your own portal credential — never share it; the `@` is encoded for you), then start
   both. See docs/REAL_GRID.md.
+
+---
+
+## 5. Proving it is LIVE (not static data) — strongest first
+
+1. **Cause → effect with an input that did not exist a minute ago.** Read a plate off the
+   terminal as it scrolls, type it into WATCHLIST on camera, let the alert fire on the
+   vehicle's next pass. Static data cannot answer an input the judges just watched you create.
+   (On evaluation day the judges' own plate plays this role — rehearse it exactly this way.)
+2. **Three clocks that agree.** In one frame: the camera's burned-in clock in the live video,
+   the detection timestamp in the alert card, and the Mac menu-bar clock — all advancing.
+3. **Counters that move while they watch.** The stats bar's **LAST READ — n s ago** heartbeat
+   (green = data arriving now), detections climbing, reads scrolling, a new alert card sliding in.
+4. **Break something and watch it heal.** Ctrl-C the relay for one camera on screen → HEALTH
+   shows it drop and the reconnect count tick up → it recovers. Nobody scripts a failure.
+5. **Mint the evidence dossier after the live alert** — its generated_at and hash chain are
+   stamped in front of them.
+6. **Raw API for the technical jury:** `curl localhost:8000/api/detections?limit=3` — JSON with
+   timestamps from seconds ago.
