@@ -38,7 +38,7 @@ import os
 # Rule 1: force RTSP over TCP. This MUST run before `import cv2` anywhere in
 # the process - OpenCV's FFmpeg backend reads the variable at capture-open
 # time, and every entry point imports this module before touching cv2.
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;discardcorrupt"
 
 # Rule 6 in practice: FFmpeg's decoder prints "Could not find ref with POC",
 # "co located POCs unavailable" and "error while decoding MB ..." on every
