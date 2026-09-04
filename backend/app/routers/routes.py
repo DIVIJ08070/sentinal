@@ -22,7 +22,7 @@ from ..db import get_db
 from ..matching import normalize, score_match
 from ..models import Camera, Detection
 from ..schemas import as_naive_utc, iso_z
-from ..sources import visible_detection
+from ..sources import visible_detection  # noqa: F401 (kept for parity; route sees all)
 
 router = APIRouter(tags=["routes"])
 
@@ -195,10 +195,14 @@ def build_route_payload(
     # pre-filter bounds the Python-side scoring loop; at production scale the
     # same idea extends to an indexed canonical-plate column + confusion-twin
     # candidate generation (HLD §6, "Matching at scale").
+    # Route reconstruction is an investigator's tool: unlike the live ALERTS
+    # feed and stats (which hide simulator/mock rows to stay genuine), a route
+    # search must see EVERY stored sighting of the plate — including the
+    # simulator's representative cross-camera journeys used to demonstrate the
+    # engine. So no visible_detection() filter here.
     query = (
         db.query(Detection, Camera)
         .join(Camera, Detection.camera_id == Camera.id)
-        .filter(visible_detection())  # hide simulator/mock rows
         .filter(Detection.plate.isnot(None))
         .filter(func.length(Detection.plate).between(len(target) - 1, len(target) + 1))
     )
