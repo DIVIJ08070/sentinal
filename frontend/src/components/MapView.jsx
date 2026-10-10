@@ -28,10 +28,11 @@ function statusColor(status) {
   return STATUS_COLORS[status] || STATUS_COLORS.unknown;
 }
 
-function numberIcon(n) {
+/** Simulated demo sightings get a dashed blue ring so they never read as camera evidence. */
+function numberIcon(n, simulated = false) {
   return L.divIcon({
     className: 'route-num-wrap',
-    html: `<div class="route-num">${n}</div>`,
+    html: `<div class="route-num${simulated ? ' simulated' : ''}">${n}</div>`,
     iconSize: [26, 26],
     iconAnchor: [13, 13],
   });
@@ -175,12 +176,17 @@ export default function MapView({
           <Marker
             key={`route-${p.camera_id}-${p.captured_at}-${p.seq}`}
             position={[p.lat, p.lon]}
-            icon={numberIcon(p.seq)}
+            icon={numberIcon(p.seq, p.simulated)}
           >
             <Popup>
               <div className="popup-title">
                 Sighting #{p.seq} — {p.camera_name}
               </div>
+              {p.simulated && (
+                <div className="popup-line sim-line">
+                  SIMULATED demo data — not a camera read
+                </div>
+              )}
               <div className="popup-line">{p.department || 'Unassigned'}</div>
               <div className="popup-line">
                 <span title={p.captured_at}>{formatLocal(p.captured_at)}</span>

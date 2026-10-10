@@ -67,7 +67,8 @@ export const api = {
   // Intercept prediction: heuristic next-camera forecast from a plate's recent
   // route. GET /api/vehicles/{plate}/predict ->
   //   { predictions: [{camera_name, distance_km, bearing_deg, eta_seconds, confidence}], reason? }
-  predictIntercept: (plate) => request(`/vehicles/${encodeURIComponent(plate)}/predict`),
+  predictIntercept: (plate, params) =>
+    request(`/vehicles/${encodeURIComponent(plate)}/predict`, { params }),
 
   // Camera health & bandwidth
   healthSummary: () => request('/health/summary'),
@@ -75,7 +76,7 @@ export const api = {
 
 // URL of the evidence-dossier PDF for a plate (opened in a new tab — the
 // backend serves it inline with content-disposition; no body parsing needed).
-// `params` takes the same optional {since, until} as the route endpoint.
+// `params` takes the same optional {since, until, include_simulated} as the route endpoint.
 export function dossierPdfUrl(plate, params = {}) {
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {

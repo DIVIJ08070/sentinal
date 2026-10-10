@@ -86,6 +86,7 @@ def client():
         })
         assert r.status_code == 200
         yield c
+    engine.dispose()  # release the SQLite file handle (Windows cannot delete an open file)
     if os.path.exists(_TEST_DB):
         os.remove(_TEST_DB)
 
@@ -378,3 +379,42 @@ def test_auth_token_role_gate(client, journey, monkeypatch):
     assert client.delete(
         f"/api/watchlist/{entry_id}", headers={"Authorization": "Bearer tok-admin"}
     ).status_code == 200
+
+
+def test_route_separates_live_from_simulated(client, journey):
+    """Simulator/mock sightings are hidden from routes by default, tagged
+    `simulated` when included, and flagged loudly in the dossier."""
+    plate = "GJ05SM0001"
+    for i, detector in enumerate(("anpr", "simulator", "simulator")):
+        r = client.post("/api/detections", json={
+            "camera_id": 1 + i, "plate": plate, "plate_confidence": 0.9,
+            "captured_at": iso(BASE_T + timedelta(hours=3, seconds=180 * i)),
+            "detector": detector,
+        })
+        assert r.status_code == 200, r.text
+
+    live = client.get(f"/api/vehicles/{plate}/route").json()
+    assert [p["simulated"] for p in live["points"]] == [False]
+    assert live["include_simulated"] is False
+    assert live["simulated_hidden"] == 2 and live["simulated_count"] == 0
+
+    both = client.get(f"/api/vehicles/{plate}/route", params={"include_simulated": True}).json()
+    assert [p["simulated"] for p in both["points"]] == [False, True, True]
+    assert both["simulated_count"] == 2 and both["simulated_hidden"] == 0
+
+    d_live = client.get(f"/api/vehicles/{plate}/dossier.json").json()
+    assert d_live["includes_simulated"] is False
+    assert all(row["simulated"] is False for row in d_live["sightings"])
+
+    d_both = client.get(
+        f"/api/vehicles/{plate}/dossier.json", params={"include_simulated": True}
+    ).json()
+    assert d_both["includes_simulated"] is True
+    assert [row["simulated"] for row in d_both["sightings"]] == [False, True, True]
+    # The simulated flag is inside the hashed row, so it cannot be stripped
+    # from an exported dossier without breaking the chain.
+    row = d_both["sightings"][1]
+    payload = {k: v for k, v in row.items() if k not in ("row_hash", "snapshot_b64")}
+    assert sha256_hex(canonical_json(payload)) == row["row_hash"]
+    pdf = client.get(f"/api/vehicles/{plate}/dossier.pdf", params={"include_simulated": True})
+    assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")

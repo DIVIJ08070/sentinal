@@ -21,6 +21,16 @@ HIDDEN_DETECTORS = frozenset(
 )
 
 
+# Detector tags that mean "not a real camera read". Fixed (unlike the
+# env-configurable hide list above) because route/dossier labelling must never
+# depend on deployment config: a simulated sighting is always tagged as one.
+SIMULATED_DETECTORS = frozenset({"simulator", "mock"})
+
+
+def is_simulated(detector: str | None) -> bool:
+    return detector in SIMULATED_DETECTORS
+
+
 def visible_detection():
     """SQLAlchemy criterion selecting detections whose source is not hidden."""
     if not HIDDEN_DETECTORS:

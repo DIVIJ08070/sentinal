@@ -38,6 +38,7 @@ import base64
 import json
 import os
 import re
+import time
 from typing import Any, List, Optional, Tuple
 
 # Gateway rule 1: the RTSP transport option must exist before cv2's FIRST
@@ -94,6 +95,76 @@ VEHICLE_CLASS_IDS = (2, 3, 5, 7)
 # route points and the AI-view box label. 'motorbike' (COCO) is surfaced as the
 # contract's 'motorcycle'.
 VEHICLE_TYPE_BY_CLASS = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
+
+
+# Indian registration syntax: state (2 letters), RTO (2 digits), series (1-3
+# letters), number (4 digits). Used by the RapidOCR path as a hard gate.
+_INDIAN_PLATE_RE = re.compile(r"^[A-Z]{2}\d{2}[A-Z]{1,3}\d{4}$")
+# Narrowest plate crop (px) that read correctly in the labelled set was 59 wide;
+# the 39-49 px crops were unreadable by every engine tried (docs/OCR_EVALUATION.md).
+_RAPID_MIN_PLATE_W = 56
+_DIGIT_AS_LETTER = {"0": "O", "1": "I", "5": "S", "8": "B", "6": "G", "2": "Z"}
+_LETTER_AS_DIGIT = {v: k for k, v in _DIGIT_AS_LETTER.items()}
+
+
+def _coerce(segment: str, to_letters: bool) -> Optional[str]:
+    table = _DIGIT_AS_LETTER if to_letters else _LETTER_AS_DIGIT
+    out = []
+    for ch in segment:
+        if ch.isalpha() == to_letters and ch.isalnum():
+            out.append(ch)
+        elif ch in table:
+            out.append(table[ch])
+        else:
+            return None
+    return "".join(out)
+
+
+def _repair_indian_plate(text: str) -> Optional[str]:
+    """Return `text` as a valid Indian plate, or None. A read that is not valid
+    as-is is repaired only by swapping OCR confusion twins (0/O, 1/I, 5/S, 8/B,
+    6/G, 2/Z) where the syntax demands the other character class."""
+    text = re.sub(r"[^A-Z0-9]", "", (text or "").upper())
+    if _INDIAN_PLATE_RE.match(text):
+        return text
+    if not 9 <= len(text) <= 10:
+        return None
+    state, rto, number = _coerce(text[:2], True), _coerce(text[2:4], False), _coerce(text[-4:], False)
+    series = _coerce(text[4:-4], True)
+    if None in (state, rto, number, series) or not 1 <= len(series) <= 3:
+        return None
+    fixed = state + rto + series + number
+    return fixed if _INDIAN_PLATE_RE.match(fixed) else None
+
+
+def _rapid_reading_order(result) -> Tuple[str, Optional[float]]:
+    """Join RapidOCR line boxes in reading order (rows top->bottom, each row
+    left->right, so a two-line plate reads top then bottom). Returns
+    (text, mean line score)."""
+    if not result:
+        return "", None
+    items = []
+    for box, text, score in result:
+        cleaned = re.sub(r"[^A-Z0-9]", "", str(text).upper())
+        if cleaned:
+            items.append((
+                (box[0][0] + box[2][0]) / 2.0, (box[0][1] + box[2][1]) / 2.0,
+                abs(box[2][1] - box[0][1]), cleaned, float(score),
+            ))
+    if not items:
+        return "", None
+    items.sort(key=lambda t: t[1])
+    rows, current = [], [items[0]]
+    for it in items[1:]:
+        mean_y = sum(c[1] for c in current) / len(current)
+        if abs(it[1] - mean_y) < 0.6 * max(it[2], 1.0):
+            current.append(it)
+        else:
+            rows.append(current)
+            current = [it]
+    rows.append(current)
+    ordered = [t for row in rows for t in sorted(row, key=lambda t: t[0])]
+    return "".join(t[3] for t in ordered), sum(t[4] for t in ordered) / len(ordered)
 
 
 def _plate_label(plate: str, confidence: Optional[float]) -> str:
@@ -171,7 +242,43 @@ class AnprDetector(Detector):
         # whatever each camera delivers - no fixed-shape batch across cameras
         # (gateway rule 7: mixed codecs/resolutions).
         self._yolo = YOLO(yolo_model)
-        self._ocr = _PlateRecognizer(ocr_model or _DEFAULT_OCR_MODEL)
+        # SENTINEL_OCR_MODEL swaps the reader at launch for A/B tests (e.g.
+        # cct-s-v2-global-model, which has 10 character slots; the default
+        # cct-xs-v1 has 9 and cannot emit a full 10-char Indian plate).
+        self._ocr = _PlateRecognizer(
+            ocr_model or os.environ.get("SENTINEL_OCR_MODEL") or _DEFAULT_OCR_MODEL
+        )
+        # Opt-in evaluation capture: SENTINEL_SAVE_CROPS=<dir> saves every plate
+        # crop handed to the OCR (plate pixels only, never video) next to the
+        # live read, so reader changes can be scored on real camera data.
+        # OCR engine. Default: RapidOCR (PP-OCR via ONNX, CPU) with an Indian
+        # plate-syntax gate when rapidocr-onnxruntime is installed, else
+        # fast-plate-ocr. On labelled real sandbox crops (19 crops, 10 vehicles)
+        # fast-plate cct-xs-v1 read 1 exactly and RapidOCR + the gate 11
+        # (docs/OCR_EVALUATION.md). SENTINEL_OCR_ENGINE=fast-plate forces the
+        # old reader; =rapidocr requires the package instead of falling back.
+        self._rapid = None
+        engine = (os.environ.get("SENTINEL_OCR_ENGINE") or "").strip().lower()
+        if engine not in ("", "rapidocr", "fast-plate"):
+            raise ValueError(
+                f"SENTINEL_OCR_ENGINE={engine!r}: expected 'rapidocr' or 'fast-plate'"
+            )
+        if engine != "fast-plate":
+            try:
+                from rapidocr_onnxruntime import RapidOCR
+                self._rapid = RapidOCR()
+            except ImportError as exc:
+                if engine == "rapidocr":
+                    raise ImportError(
+                        "SENTINEL_OCR_ENGINE=rapidocr needs: pip install rapidocr-onnxruntime"
+                    ) from exc
+                print("anpr: rapidocr-onnxruntime not installed; using fast-plate-ocr "
+                      "(pip install rapidocr-onnxruntime for the better Indian-plate reader)")
+        self._crop_dir = os.environ.get("SENTINEL_SAVE_CROPS") or None
+        self._crop_max = int(os.environ.get("SENTINEL_SAVE_CROPS_MAX", "3000"))
+        self._crop_n = 0
+        if self._crop_dir:
+            os.makedirs(self._crop_dir, exist_ok=True)
 
         # Plate localizer: optional, never fatal (degrades to vehicle-crop OCR).
         # Pinned to the CPU execution provider: onnxruntime's CoreML EP fails
@@ -461,10 +568,63 @@ class AnprDetector(Detector):
         """OCR a plate region, enhanced input first with a plain-upscale
         fallback so the enhancement can only ADD reads, never remove them.
         """
-        plate, confidence = self._read_plate(self._ocr_input(region))
-        if plate is None:
-            plate, confidence = self._read_plate(self._upscale_narrow(region))
+        if self._rapid is not None:
+            plate, confidence = self._read_plate_rapid(region)
+        else:
+            plate, confidence = self._read_plate(self._ocr_input(region))
+            if plate is None:
+                plate, confidence = self._read_plate(self._upscale_narrow(region))
+        if self._crop_dir:
+            self._save_crop(region, plate, confidence)
         return plate, confidence
+
+    def _read_plate_rapid(self, region) -> Tuple[Optional[str], Optional[float]]:
+        """RapidOCR read of a RAW plate crop, gated on Indian plate syntax.
+
+        The raw crop is tried first, then a 96 px-high upscale (it rescues some
+        crops the raw read garbles). A read is accepted only if it already fits
+        AA00A(AA)0000 or becomes so after a positional letter<->digit repair;
+        anything else (caption text, half-read plates) is rejected rather than
+        trusted. Confidence is RapidOCR's mean line score. Never raises.
+        """
+        h, w = region.shape[:2]
+        if w < _RAPID_MIN_PLATE_W:
+            return None, None  # too few pixels for any engine; saves ~0.7 s of CPU
+        views = [region]
+        if 0 < h < 96:
+            scale = 96.0 / h
+            views.append(cv2.resize(
+                region, (max(1, int(region.shape[1] * scale)), 96),
+                interpolation=cv2.INTER_CUBIC,
+            ))
+        for view in views:
+            try:
+                result, _ = self._rapid(view)
+            except Exception:
+                continue
+            text, score = _rapid_reading_order(result)
+            plate = _repair_indian_plate(text)
+            if plate is None:
+                continue
+            if score is not None and score < self.min_plate_confidence:
+                continue
+            return plate, score
+        return None, None
+
+    def _save_crop(self, region, plate, confidence) -> None:
+        """Evaluation capture (see SENTINEL_SAVE_CROPS). Never raises."""
+        try:
+            if self._crop_n >= self._crop_max:
+                return
+            self._crop_n += 1
+            stamp = time.strftime("%H%M%S")
+            name = f"{os.getpid()}-{id(self) % 9973}-{self._crop_n:05d}-{stamp}.png"
+            cv2.imwrite(os.path.join(self._crop_dir, name), region)
+            with open(os.path.join(self._crop_dir, "reads.csv"), "a", encoding="utf-8") as fh:
+                fh.write(f"{name},{plate or ''},"
+                         f"{'' if confidence is None else f'{confidence:.3f}'}\n")
+        except Exception:
+            pass
 
     def _read_plate(self, crop) -> Tuple[Optional[str], Optional[float]]:
         """Run OCR on a plate crop; returns (plate, confidence) or (None, None).

@@ -22,7 +22,7 @@ from ..db import get_db
 from ..matching import normalize, score_match
 from ..models import Camera, Detection
 from ..schemas import as_naive_utc, iso_z
-from ..sources import visible_detection  # noqa: F401 (kept for parity; route sees all)
+from ..sources import is_simulated
 
 router = APIRouter(tags=["routes"])
 
@@ -184,9 +184,16 @@ def build_route_payload(
     plate: str,
     since: datetime | None = None,
     until: datetime | None = None,
+    include_simulated: bool = False,
 ) -> dict:
     """Full route payload for a plate — shared by the route endpoint and the
-    evidence dossier so both always agree on matching + physics decisions."""
+    evidence dossier so both always agree on matching + physics decisions.
+
+    By default only genuine camera reads (live ANPR) are routed. Simulator/mock
+    sightings (the scripted demo journey) are added only when
+    `include_simulated` is set, and then every such point is tagged
+    `simulated: true` so it can never pass as camera evidence. How many were
+    left out is reported as `simulated_hidden` so the UI can offer them."""
     target = normalize(plate)
 
     # Candidate blocking: the fuzzy threshold (weighted distance <= 1.0) allows
@@ -195,11 +202,8 @@ def build_route_payload(
     # pre-filter bounds the Python-side scoring loop; at production scale the
     # same idea extends to an indexed canonical-plate column + confusion-twin
     # candidate generation (HLD §6, "Matching at scale").
-    # Route reconstruction is an investigator's tool: unlike the live ALERTS
-    # feed and stats (which hide simulator/mock rows to stay genuine), a route
-    # search must see EVERY stored sighting of the plate — including the
-    # simulator's representative cross-camera journeys used to demonstrate the
-    # engine. So no visible_detection() filter here.
+    # All rows are fetched (simulated ones included) so the response can say
+    # how many simulated sightings were left out; they are dropped below.
     query = (
         db.query(Detection, Camera)
         .join(Camera, Detection.camera_id == Camera.id)
@@ -214,9 +218,14 @@ def build_route_payload(
 
     points: list[dict] = []
     captured: list[datetime] = []
+    simulated_hidden = 0
     for detection, camera in rows:
         score = score_match(detection.plate, target)
         if score is None:
+            continue
+        simulated = is_simulated(detection.detector)
+        if simulated and not include_simulated:
+            simulated_hidden += 1
             continue
         points.append({
             "camera_id": camera.id,
@@ -228,6 +237,8 @@ def build_route_payload(
             "pts_ms": detection.pts_ms,
             "confidence": detection.plate_confidence,
             "vehicle_type": detection.vehicle_type,
+            "detector": detection.detector,
+            "simulated": simulated,
             "snapshot_b64": detection.snapshot_b64,
             "fuzzy": score.match_type == "fuzzy",
             "match_confidence": score.confidence,
@@ -253,6 +264,9 @@ def build_route_payload(
     return {
         "plate": target,
         "points": points,
+        "include_simulated": include_simulated,
+        "simulated_count": sum(1 for p in points if p["simulated"]),
+        "simulated_hidden": simulated_hidden,
         "geojson": {"type": "LineString", "coordinates": coordinates},
         "stats": {
             "first_seen": accepted[0]["captured_at"] if accepted else None,
@@ -283,6 +297,7 @@ def build_intercept_prediction(
     plate: str,
     since: datetime | None = None,
     until: datetime | None = None,
+    include_simulated: bool = False,
 ) -> dict:
     """Predict where a vehicle is heading next from its accepted sightings.
 
@@ -294,7 +309,7 @@ def build_intercept_prediction(
     routed drive time. Returns {predictions:[...], reason:str|None, heading_deg,
     mean_speed_kmh, from_camera_id}.
     """
-    payload = build_route_payload(db, plate, since, until)
+    payload = build_route_payload(db, plate, since, until, include_simulated)
     target = payload["plate"]
     accepted = [
         p for p in payload["points"]
@@ -384,11 +399,13 @@ def vehicle_predict(
     request: Request,
     since: datetime | None = None,
     until: datetime | None = None,
+    include_simulated: bool = False,
     db: Session = Depends(get_db),
 ):
-    payload = build_intercept_prediction(db, plate, since, until)
+    payload = build_intercept_prediction(db, plate, since, until, include_simulated)
     audit_record(
         db, "intercept_predict", resolve_operator(request), plate=payload["plate"],
+        include_simulated=include_simulated,
         since=iso_z(as_naive_utc(since)) if since else None,
         until=iso_z(as_naive_utc(until)) if until else None,
         predictions=len(payload["predictions"]),
@@ -404,11 +421,13 @@ def vehicle_route(
     request: Request,
     since: datetime | None = None,
     until: datetime | None = None,
+    include_simulated: bool = False,
     db: Session = Depends(get_db),
 ):
-    payload = build_route_payload(db, plate, since, until)
+    payload = build_route_payload(db, plate, since, until, include_simulated)
     audit_record(
         db, "route_query", resolve_operator(request), plate=payload["plate"],
+        include_simulated=include_simulated,
         since=iso_z(as_naive_utc(since)) if since else None,
         until=iso_z(as_naive_utc(until)) if until else None,
         sightings=payload["stats"]["sightings_count"],

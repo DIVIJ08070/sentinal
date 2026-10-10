@@ -29,6 +29,11 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
   const [route, setRoute] = useState(null);
+  // Simulated demo sightings are excluded unless asked for; when included they
+  // are tagged everywhere (rows, map, dossier). `hiddenSim` = how many the last
+  // search left out, so the empty state can offer them.
+  const [includeSim, setIncludeSim] = useState(false);
+  const [hiddenSim, setHiddenSim] = useState(0);
   const [searchWindow, setSearchWindow] = useState({}); // {since, until} of the last search — reused for the dossier export
   const [status, setStatus] = useState('idle'); // idle | loading | done | empty | error
   const [error, setError] = useState(null);
@@ -45,7 +50,7 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
     setPredictError(null);
   };
 
-  const runTrace = async (p) => {
+  const runTrace = async (p, sim = includeSim) => {
     if (!p) return;
     setStatus('loading');
     setError(null);
@@ -54,7 +59,9 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
       const params = {};
       if (since) params.since = new Date(since).toISOString();
       if (until) params.until = new Date(until).toISOString();
+      if (sim) params.include_simulated = 'true';
       const data = await api.vehicleRoute(p, params);
+      setHiddenSim((data && data.simulated_hidden) || 0);
       if (!data || !Array.isArray(data.points) || data.points.length === 0) {
         setRoute(null);
         onRoute(null);
@@ -95,8 +102,16 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
     setSearchWindow({});
     setStatus('idle');
     setError(null);
+    setHiddenSim(0);
     resetPrediction();
     onRoute(null);
+  };
+
+  // Flip the simulated toggle and, if a trace is already on screen, re-run it
+  // so the table, map and dossier link all reflect the new setting at once.
+  const changeIncludeSim = (value) => {
+    setIncludeSim(value);
+    if (plate.trim() && status !== 'idle') runTrace(plate.trim(), value);
   };
 
   // Predict the vehicle's next likely camera from its accepted route so far.
@@ -107,7 +122,10 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
     setPredictStatus('loading');
     setPredictError(null);
     try {
-      const data = await api.predictIntercept(route.plate);
+      const data = await api.predictIntercept(
+        route.plate,
+        searchWindow.include_simulated ? { include_simulated: 'true' } : undefined
+      );
       setPrediction(data && typeof data === 'object' ? data : { predictions: [] });
       setPredictStatus('done');
     } catch (err) {
@@ -164,6 +182,17 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
             />
           </label>
         </div>
+        <label
+          className="sim-toggle"
+          title="Off: only genuine camera reads are routed. On: scripted simulator sightings are added and tagged SIMULATED."
+        >
+          <input
+            type="checkbox"
+            checked={includeSim}
+            onChange={(e) => changeIncludeSim(e.target.checked)}
+          />
+          Include simulated demo sightings (tagged)
+        </label>
         <div className="row">
           <button className="btn btn-amber" type="submit" disabled={status === 'loading'}>
             {status === 'loading' ? 'Tracing…' : 'Trace route'}
@@ -185,6 +214,20 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
             No sightings of <code>{plate.trim().toUpperCase()}</code> in the
             selected time window. Widen the window or verify the plate.
           </p>
+          {hiddenSim > 0 && !includeSim && (
+            <p className="sim-hint">
+              {hiddenSim} simulated demo sighting{hiddenSim === 1 ? '' : 's'} of
+              this plate exist{hiddenSim === 1 ? 's' : ''} (scripted data, not
+              camera reads).{' '}
+              <button
+                type="button"
+                className="btn btn-ghost btn-small"
+                onClick={() => changeIncludeSim(true)}
+              >
+                Show simulated
+              </button>
+            </p>
+          )}
         </div>
       )}
 
@@ -200,6 +243,17 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
       {route && stats && (
         <div>
           <TrustTrace plate={route.plate} />
+          {route.simulated_count > 0 && (
+            <div className="sim-banner">
+              <strong>
+                {route.simulated_count} of {route.points.length} sighting
+                {route.points.length === 1 ? '' : 's'} SIMULATED.
+              </strong>{' '}
+              Rows tagged <span className="badge simulated">simulated</span> are
+              scripted demo data, not camera reads — they are drawn with a
+              dashed blue ring on the map and marked in the exported dossier.
+            </div>
+          )}
           {allFuzzy && (
             <div className="all-fuzzy-banner">
               <strong>
@@ -385,6 +439,14 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
                       <td>
                         <span className={rejected ? 'strike' : ''}>{p.camera_name}</span>
                         <div className="cell-sub">{p.department || ''}</div>
+                        {p.simulated && (
+                          <span
+                            className="badge simulated"
+                            title="Scripted demo sighting — not a real camera read"
+                          >
+                            simulated
+                          </span>
+                        )}
                         {p.vehicle_type && (
                           <span
                             className="badge vehicle"

@@ -59,9 +59,14 @@ class RelayManager:
     def known(self, cam):
         return cam in self.codecs
 
-    def _spawn(self, cam):
+    def _spawn(self, cam, fresh=True):
         out_dir = os.path.join(self.out_root, cam)
-        shutil.rmtree(out_dir, ignore_errors=True)
+        if fresh:
+            shutil.rmtree(out_dir, ignore_errors=True)
+        # On a respawn the old playlist/segments are KEPT: with append_list the
+        # new ffmpeg continues the same playlist (marked by a discontinuity), so
+        # a connected player rides over the gateway restarting its looping feed
+        # instead of losing the manifest and buffering.
         os.makedirs(out_dir, exist_ok=True)
         codec = (self.codecs.get(cam) or "h264").lower()
         if codec in ("hevc", "h265"):
@@ -78,7 +83,7 @@ class RelayManager:
                "-i", with_rtsp_auth(f"rtsp://{self.host}:8554/stream/{cam}"),
                *video_args, "-an",
                "-f", "hls", "-hls_time", "2", "-hls_list_size", "6",
-               "-hls_flags", "delete_segments+append_list+omit_endlist",
+               "-hls_flags", "delete_segments+append_list+omit_endlist+discont_start",
                os.path.join(out_dir, "index.m3u8")]
         log = open(os.path.join(out_dir, "ffmpeg.log"), "w")
         proc = subprocess.Popen(cmd, stdout=log, stderr=log)
@@ -143,10 +148,12 @@ class RelayManager:
                     if not self._evict_idle():
                         return False  # cap reached, nothing evictable
                 self.pullers[cam] = {
-                    "proc": self._spawn(cam),
+                    "proc": self._spawn(cam, fresh=p is None),
                     "last_access": time.monotonic(),
                     "standing": cam in self.standing,
                     "backoff": 2.0,
+                    "started": time.monotonic(),
+                    "respawn_at": None,
                 }
         manifest = os.path.join(self.out_root, cam, "index.m3u8")
         # Answer fast: grid RTSP handshakes can take 10-20s+, far beyond what
@@ -161,33 +168,49 @@ class RelayManager:
         return os.path.exists(manifest)
 
     def supervise(self):
-        """Respawn standing/watched pullers with backoff; reap idle on-demand ones."""
-        while not self.stopping.wait(5.0):
+        """Respawn standing/watched pullers; reap idle on-demand ones.
+
+        The lock is held only for quick bookkeeping, never while waiting out a
+        restart delay: every browser request needs the same lock (ensure() /
+        touch()), so sleeping under it froze the whole relay for up to 30 s per
+        restarting camera.
+
+        A clean exit (rc=0) after a stable run is the gateway ending the
+        session as its looping feed restarts, so reconnect after ~1 s. Quick
+        exits and failures back off exponentially (2 s -> 30 s).
+        """
+        while not self.stopping.wait(1.0):
             now = time.monotonic()
             with self.lock:
                 for cam in list(self.pullers):
                     p = self.pullers[cam]
                     alive = p["proc"].poll() is None
                     idle = now - p["last_access"]
-                    if alive and not p["standing"] and idle > self.idle_timeout:
-                        self._kill(cam, f"idle {idle:.0f}s")
+                    if alive:
+                        p["respawn_at"] = None
+                        if not p["standing"] and idle > self.idle_timeout:
+                            self._kill(cam, f"idle {idle:.0f}s")
+                        elif now - p["started"] > 10.0:
+                            p["backoff"] = 2.0  # stable run: forget past failures
                         continue
-                    if not alive:
-                        # Respawn standing pullers always; on-demand ones only
-                        # while someone is actually watching (recent access).
-                        if p["standing"] or idle < 15.0:
-                            wait = p["backoff"]
+                    # Dead: respawn standing pullers always, on-demand ones only
+                    # while someone is actually watching (recent access).
+                    if not (p["standing"] or idle < 15.0):
+                        self._kill(cam, "exited while unwatched")
+                        continue
+                    if p["respawn_at"] is None:
+                        clean = p["proc"].returncode == 0 and now - p["started"] >= 10.0
+                        wait = 1.0 if clean else p["backoff"]
+                        if not clean:
                             p["backoff"] = min(wait * 2.0, 30.0)
-                            print(f"hls_relay: {cam} puller exited "
-                                  f"(rc={p['proc'].returncode}); respawn in {wait:.0f}s",
-                                  file=sys.stderr)
-                            if self.stopping.wait(wait):
-                                return
-                            p["proc"] = self._spawn(cam)
-                        else:
-                            self._kill(cam, "exited while unwatched")
-                    else:
-                        p["backoff"] = 2.0
+                        p["respawn_at"] = now + wait
+                        print(f"hls_relay: {cam} puller exited "
+                              f"(rc={p['proc'].returncode}); respawn in {wait:.0f}s",
+                              file=sys.stderr)
+                    elif now >= p["respawn_at"]:
+                        p["proc"] = self._spawn(cam, fresh=False)
+                        p["started"] = now
+                        p["respawn_at"] = None
 
     def shutdown(self):
         self.stopping.set()
