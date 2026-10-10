@@ -72,8 +72,9 @@ def build_dossier(
     until: datetime | None = None,
     operator: str | None = None,
     export_format: str = "json",
+    include_simulated: bool = False,
 ) -> dict:
-    route = build_route_payload(db, plate, since, until)
+    route = build_route_payload(db, plate, since, until, include_simulated)
     generated_at = iso_z(utcnow())
     operator = operator or resolve_operator(None)
 
@@ -82,6 +83,7 @@ def build_dossier(
     export_entry = audit_record(
         db, "dossier_export", operator, plate=route["plate"],
         format=export_format,
+        include_simulated=include_simulated,
         since=iso_z(since) if since else None,
         until=iso_z(until) if until else None,
         sightings=route["stats"]["sightings_count"],
@@ -133,6 +135,7 @@ def build_dossier(
             "captured_at": point["captured_at"],
             "pts_ms": point["pts_ms"],
             "confidence": point["confidence"],
+            "simulated": point["simulated"],
             "fuzzy": point["fuzzy"],
             "match_confidence": point["match_confidence"],
             "matched_from": point["matched_from"],
@@ -156,6 +159,7 @@ def build_dossier(
         **metadata,
         "no_sightings": no_sightings,
         "notice": NO_SIGHTINGS_NOTICE if no_sightings else None,
+        "includes_simulated": route["simulated_count"] > 0,
         "watchlist": watchlist,
         "stats": route["stats"],
         "audit": {
@@ -236,6 +240,18 @@ def _render_pdf(dossier: dict) -> bytes:
         pdf.set_text_color(20, 20, 20)
         pdf.ln(3)
 
+    # -- Simulated-data banner: a dossier mixing in demo rows must say so ----
+    if dossier.get("includes_simulated"):
+        pdf.set_fill_color(180, 83, 9)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.multi_cell(0, 6, _txt(
+            "CONTAINS SIMULATED DEMO SIGHTINGS (rows marked SIMULATED). These are "
+            "scripted test data, not camera evidence, and must not be relied on "
+            "as such."), fill=True, border=1, align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(20, 20, 20)
+        pdf.ln(3)
+
     # -- Case metadata ------------------------------------------------------
     pdf.set_text_color(20, 20, 20)
     pdf.set_font("Helvetica", "B", 10)
@@ -296,6 +312,8 @@ def _render_pdf(dossier: dict) -> bytes:
         status = "ACCEPTED" if row["accepted"] else "REJECTED"
         if row["accepted"] and row["implied_speed_kmh"] is not None:
             status += f" ({row['leg_km']:.1f} km @ {row['implied_speed_kmh']:.0f} km/h)"
+        if row["simulated"]:
+            status = "SIMULATED " + status
         cells = (str(row["seq"]), camera, latlon, row["captured_at"], ocr, match, _fit(status, 30))
         if not row["accepted"]:
             pdf.set_text_color(180, 30, 30)
@@ -418,11 +436,13 @@ def dossier_json(
     request: Request,
     since: datetime | None = None,
     until: datetime | None = None,
+    include_simulated: bool = False,
     db: Session = Depends(get_db),
     _principal=Depends(require_role("operator")),
 ):
     """Timestamped movement report incl. the full hash chain (machine-verifiable)."""
-    return build_dossier(db, plate, since, until, resolve_operator(request), "json")
+    return build_dossier(db, plate, since, until, resolve_operator(request), "json",
+                         include_simulated)
 
 
 @router.get("/vehicles/{plate}/dossier.pdf")
@@ -431,10 +451,12 @@ def dossier_pdf(
     request: Request,
     since: datetime | None = None,
     until: datetime | None = None,
+    include_simulated: bool = False,
     db: Session = Depends(get_db),
     _principal=Depends(require_role("operator")),
 ):
-    dossier = build_dossier(db, plate, since, until, resolve_operator(request), "pdf")
+    dossier = build_dossier(db, plate, since, until, resolve_operator(request), "pdf",
+                            include_simulated)
     content = _render_pdf(dossier)
     filename = f"dossier-{normalize(plate) or 'unknown'}.pdf"
     return Response(

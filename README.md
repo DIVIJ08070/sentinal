@@ -133,7 +133,9 @@ Then, in three terminals:
 ```
 
 Open **http://localhost:5173**. Live alerts appear in the Alerts tab; search
-`GJ01AB1234` in the Route tab to draw the timestamped 8-camera route on the map.
+`GJ01AB1234` in the Route tab (tick **Include simulated demo sightings**) to draw the
+timestamped 8-camera scripted route on the map. Simulated rows are tagged `simulated`
+on the table, map and dossier; routes show genuine camera reads only by default.
 This mode uses `ingest/mock_gateway.py` (a realistic ~50-camera catalogue) and
 `ingest/simulator.py` (a scripted journey) — no real cameras, no ML, no
 credentials, fully reproducible.
@@ -263,7 +265,7 @@ missing, tell me and stop).
 
 3. Verify it works, and show me the evidence:
    - curl -s http://localhost:8000/api/stats                       (cameras synced, alerts > 0)
-   - curl -s "http://localhost:8000/api/vehicles/GJ01AB1234/route" (a multi-camera route with stats)
+   - curl -s "http://localhost:8000/api/vehicles/GJ01AB1234/route?include_simulated=true" (a multi-camera route with stats; the simulated flag is required for the scripted demo journey)
    - Open http://localhost:5173 in a browser/preview and screenshot the map with alerts.
 
 4. Run the test suites and report pass/fail:
@@ -271,7 +273,7 @@ missing, tell me and stop).
    make anpr-smoke        (only if you installed requirements-ml.txt)
    (cd frontend && npm run build)
 
-5. Tell me what to click: Route tab -> search "GJ01AB1234" for the vehicle route;
+5. Tell me what to click: Route tab -> tick "Include simulated demo sightings", then search "GJ01AB1234" for the scripted vehicle route;
    Alerts tab for live watchlist alerts; Cameras tab -> a camera -> Live video / AI view.
 
 Do NOT try to connect to the real government camera grid (103.250.160.189 /
