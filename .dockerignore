@@ -1,0 +1,18 @@
+# keep build context small and clean
+.git
+.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+*.db
+*.db-wal
+*.db-shm
+backend/sentinel.db*
+ingest/.hls_relay
+frontend/dist
+deliverables
+docs
+*.md
+.env
+.env.*
+!/.env.docker.example

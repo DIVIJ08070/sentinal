@@ -8,6 +8,7 @@ import {
   snapshotSrc,
   vehicleIcon,
 } from '../api.js';
+import TrustTrace from './TrustTrace.jsx';
 
 function pct(v) {
   return v == null ? null : `${Math.round(v * 100)}%`;
@@ -198,6 +199,7 @@ export default function RouteSearch({ onRoute, onLocate, initialPlate = '' }) {
 
       {route && stats && (
         <div>
+          <TrustTrace plate={route.plate} />
           {allFuzzy && (
             <div className="all-fuzzy-banner">
               <strong>

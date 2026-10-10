@@ -415,3 +415,135 @@ def vehicle_route(
         rejected=payload["stats"]["rejected_count"],
     )
     return payload
+
+
+# ---------------------------------------------------------------------------
+# TrustTrace — evidence assessment (read-only, additive). Assembles the real
+# signals the platform already computes into one explainable verdict: OCR
+# confidence and spread, cross-read agreement, fuzzy-recovery explanation,
+# route plausibility, a possible-cloned-plate flag, and evidence integrity.
+# It INVENTS nothing: every number is derived from stored detections and the
+# same route payload the map uses. The overall band is a deterministic
+# heuristic over those measured values, explicitly not a guilt or identity
+# claim.
+# ---------------------------------------------------------------------------
+def build_assessment_payload(db: Session, plate: str, since=None, until=None) -> dict:
+    route = build_route_payload(db, plate, since, until)
+    points = route["points"]
+    target = route["plate"]
+
+    confs = [p["confidence"] for p in points if p["confidence"] is not None]
+    cameras = {p["camera_id"] for p in points}
+    fuzzy_pts = [p for p in points if p.get("fuzzy")]
+    rejected_pts = [p for p in points if p.get("rejected")]
+
+    # Distinct raw OCR strings that all resolved to this vehicle (consensus
+    # breadth) and the fuzzy recoveries with their match confidence.
+    raw_reads = sorted({(p.get("matched_from") or target) for p in points})
+    recovered = []
+    seen = set()
+    for p in fuzzy_pts:
+        mf = p.get("matched_from")
+        if mf and mf not in seen:
+            seen.add(mf)
+            recovered.append({"read": mf, "recovered_as": target,
+                              "match_confidence": p.get("match_confidence")})
+
+    # Route warnings, and the clone signal: a rejected hop across a genuinely
+    # different location (not same-junction jitter) means the same plate was
+    # seen in two places impossibly fast — a possible cloned/duplicate plate.
+    warnings = []
+    clone_suspected = False
+    for p in rejected_pts:
+        warnings.append({
+            "camera": p.get("camera_name"),
+            "reason": p.get("rejected_reason"),
+            "leg_km": p.get("leg_km"),
+            "implied_speed_kmh": p.get("implied_speed_kmh"),
+        })
+        if p.get("leg_km") is not None and p["leg_km"] > SAME_LOCATION_KM:
+            clone_suspected = True
+
+    best = max(confs) if confs else None
+    mean = round(sum(confs) / len(confs), 3) if confs else None
+    worst = min(confs) if confs else None
+    agreement = len(points)
+    accepted = route["stats"]["sightings_count"]
+
+    # Deterministic trust band over measured signals (a heuristic, labelled).
+    flags = []
+    if not points:
+        band = "no-evidence"
+    else:
+        if recovered:
+            flags.append(f"{len(recovered)} OCR misread(s) recovered by the confusion-tolerant matcher")
+        if rejected_pts:
+            flags.append(f"{len(rejected_pts)} sighting(s) rejected by the physics filter")
+        if clone_suspected:
+            flags.append("possible cloned/duplicate plate — same registration seen in two places too fast; verify")
+        if agreement >= 3 and (best or 0) >= 0.85 and not rejected_pts:
+            band = "high"
+            flags.insert(0, f"corroborated by {agreement} reads across {len(cameras)} camera(s); no physics conflict")
+        elif (best or 0) >= 0.60 and (agreement >= 2 or not rejected_pts):
+            band = "medium"
+        else:
+            band = "low"
+        if agreement == 1:
+            flags.append("single read — low corroboration, treat as a lead not a fact")
+
+    return {
+        "plate": target,
+        "generated_at": iso_z(datetime.utcnow()),
+        "ocr": {
+            "reads": agreement,
+            "cameras": len(cameras),
+            "best_confidence": best,
+            "mean_confidence": mean,
+            "min_confidence": worst,
+        },
+        "consensus": {
+            "cross_read_agreement": agreement,
+            "distinct_ocr_reads": raw_reads,
+            "note": "Repeated correlated reads of the same vehicle are supporting evidence, not independent proof.",
+        },
+        "matching": {
+            "has_fuzzy": bool(fuzzy_pts),
+            "exact_reads": len(points) - len(fuzzy_pts),
+            "fuzzy_reads": len(fuzzy_pts),
+            "recovered_variants": recovered,
+        },
+        "route_plausibility": {
+            "accepted_sightings": accepted,
+            "rejected_sightings": len(rejected_pts),
+            "warnings": warnings,
+            "clone_suspected": clone_suspected,
+        },
+        "evidence_integrity": {
+            "method": "SHA-256 hash-chained chain-of-custody dossier",
+            "dossier_available": bool(points),
+            "dossier_url": f"/api/vehicles/{target}/dossier.pdf",
+        },
+        "assessment": {
+            "band": band,
+            "flags": flags,
+            "basis": "Deterministic heuristic over measured OCR confidence, cross-read agreement and route consistency. An evidence-quality indicator for human verification, not a claim of identity or guilt.",
+        },
+    }
+
+
+@router.get("/vehicles/{plate}/assessment")
+def vehicle_assessment(
+    plate: str,
+    request: Request,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    db: Session = Depends(get_db),
+):
+    """TrustTrace: an explainable evidence-quality assessment for a plate."""
+    payload = build_assessment_payload(db, plate, since, until)
+    audit_record(
+        db, "assessment_query", resolve_operator(request), plate=payload["plate"],
+        band=payload["assessment"]["band"],
+        reads=payload["ocr"]["reads"],
+    )
+    return payload

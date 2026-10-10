@@ -58,6 +58,9 @@ export const api = {
   rescanWatchlist: (sinceHours = 24) =>
     request('/watchlist/rescan', { method: 'POST', params: { since_hours: sinceHours } }),
 
+  // TrustTrace: explainable evidence-quality assessment for a plate.
+  assessment: (plate) => request(`/vehicles/${encodeURIComponent(plate)}/assessment`),
+
   // Detections & route reconstruction
   detections: (params) => request('/detections', { params }),
   vehicleRoute: (plate, params) => request(`/vehicles/${encodeURIComponent(plate)}/route`, { params }),

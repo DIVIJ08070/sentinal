@@ -1,0 +1,32 @@
+# ANPR worker image: YOLOv8n + plate localizer + fast-plate-ocr (CPU-only).
+# Heavier than the base image because of torch/ultralytics, so it is a separate
+# build and runs only under the compose "live" profile. Model weights download
+# on first run into a mounted cache volume (see docker-compose.yml).
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# libgl1 is needed by opencv-python (the ML path pulls the non-headless build).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY ingest/requirements.txt ingest/requirements.txt
+COPY ingest/requirements-ml.txt ingest/requirements-ml.txt
+RUN pip install -r ingest/requirements-ml.txt
+
+COPY ingest/ ingest/
+# Vehicle detector weight ships in the repo; the plate-localizer and OCR ONNX
+# models download on first run (cached in /root/.cache via a compose volume).
+COPY yolov8n.pt yolov8n.pt
+
+# certifi CA bundle so the first-run model downloads verify TLS.
+ENV SSL_CERT_FILE=/usr/local/lib/python3.12/site-packages/certifi/cacert.pem \
+    BACKEND_URL=http://backend:8000
+
+WORKDIR /app/ingest
+CMD ["python", "worker.py", "--detector", "anpr", "--cameras", "6,23,27", "--interval-ms", "300"]
