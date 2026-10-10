@@ -227,8 +227,11 @@ def main():
         def log_message(self, fmt, *a):
             pass
 
-    print(f"grid_adapter: serving /api/ingest on :{args.port}", file=sys.stderr)
-    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    # Bind to localhost by default (safe for host dev); set GRID_ADAPTER_BIND=
+    # 0.0.0.0 in containers so the backend can reach it across the Docker net.
+    bind = os.environ.get("GRID_ADAPTER_BIND", "127.0.0.1")
+    print(f"grid_adapter: serving /api/ingest on {bind}:{args.port}", file=sys.stderr)
+    ThreadingHTTPServer((bind, args.port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ services:
     build: .
     command: python ingest/grid_adapter.py --file ingest/grid_catalogue.json --port 8890
     environment:
+      GRID_ADAPTER_BIND: 0.0.0.0
       GRID_HLS_TEMPLATE: ${GRID_HLS_TEMPLATE:-http://localhost:8888/{id}/index.m3u8}
     expose:
       - "8890"
@@ -44,7 +45,9 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-sentinel}:${POSTGRES_PASSWORD:-sentinel}@db:5432/${POSTGRES_DB:-sentinel}
       SENTINEL_HOST: http://adapter:8890
     ports:
-      - "8000:8000"
+      # host 8001 -> container 8000 (host 8000 is used by the local SQLite dev
+      # backend; the dashboard reaches the backend inside Docker, not via this).
+      - "8001:8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/stats"]
       interval: 10s
