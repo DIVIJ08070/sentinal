@@ -170,6 +170,17 @@ export default function App() {
     [panTo]
   );
 
+  // Locate from an alert: pan the map AND open that camera's drawer (same as
+  // clicking the marker's "Open camera"). cameraId is optional so other
+  // callers can still pan only.
+  const handleLocateCamera = useCallback(
+    (lat, lon, cameraId) => {
+      if (cameraId != null) setSelectedCameraId(cameraId);
+      panTo(lat, lon);
+    },
+    [panTo]
+  );
+
   // Keep the drawer bound to the freshest copy of the camera (WS status
   // updates and periodic refreshes replace the list objects).
   const selectedCamera = useMemo(() => {
@@ -232,7 +243,7 @@ export default function App() {
             <AlertsPanel
               onAlert={handleAlert}
               onCameraStatus={handleCameraStatus}
-              onLocate={panTo}
+              onLocate={handleLocateCamera}
               onStatsChanged={loadStats}
             />
           </div>

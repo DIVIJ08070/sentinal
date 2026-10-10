@@ -17,6 +17,15 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
   // Vehicle threads: one card per vehicle (latest sighting on top); a thread
   // with several sightings expands on click to show the earlier ones.
   const [expanded, setExpanded] = useState(() => new Set());
+  // Click-to-enlarge: the snapshot the operator opened for a full-size look at
+  // the plate. null = lightbox closed.
+  const [preview, setPreview] = useState(null); // { src, plate } | null
+  useEffect(() => {
+    if (!preview) return;
+    const onKey = (e) => e.key === 'Escape' && setPreview(null);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [preview]);
   const toggleThread = (key) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -252,7 +261,14 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
 
             {shot && (
               <figure className="snapshot-fig">
-                <img className="snapshot" src={shot} alt={`Snapshot of ${a.plate}`} />
+                <img
+                  className="snapshot"
+                  src={shot}
+                  alt={`Snapshot of ${a.plate}`}
+                  title="Click to enlarge"
+                  style={{ cursor: 'zoom-in' }}
+                  onClick={() => setPreview({ src: shot, plate: a.plate })}
+                />
                 {a.plate && (
                   <figcaption className="snapshot-caption">
                     Enhanced plate close-up
@@ -272,7 +288,7 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
               {cam.lat != null && cam.lon != null && (
                 <button
                   className="btn btn-ghost btn-small"
-                  onClick={() => onLocate(cam.lat, cam.lon)}
+                  onClick={() => onLocate(cam.lat, cam.lon, a.camera_id)}
                 >
                   Locate
                 </button>
@@ -292,7 +308,14 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
                   return (
                     <div key={s.id} className={`thread-row${s.status === 'acknowledged' ? ' acked' : ''}`}>
                       {sshot ? (
-                        <img className="thread-thumb" src={sshot} alt={`Sighting ${s.plate}`} />
+                        <img
+                          className="thread-thumb"
+                          src={sshot}
+                          alt={`Sighting ${s.plate}`}
+                          title="Click to enlarge"
+                          style={{ cursor: 'zoom-in' }}
+                          onClick={() => setPreview({ src: sshot, plate: s.plate })}
+                        />
                       ) : (
                         <div className="thread-thumb empty" />
                       )}
@@ -334,6 +357,60 @@ export default function AlertsPanel({ onAlert, onCameraStatus, onLocate, onStats
           </div>
         );
       })}
+
+      {preview && (
+        <div
+          role="dialog"
+          aria-label={`Enlarged snapshot of ${preview.plate || 'vehicle'}`}
+          onClick={() => setPreview(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(5, 10, 18, 0.88)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.75rem',
+            padding: '2rem',
+            cursor: 'zoom-out',
+          }}
+        >
+          <img
+            src={preview.src}
+            alt={`Enlarged snapshot of ${preview.plate || 'vehicle'}`}
+            style={{
+              // The stored snapshot is ~320px wide; force an upscale so the
+              // plate is actually large and legible, capped to the viewport.
+              width: 'min(92vw, 820px)',
+              maxHeight: '82vh',
+              objectFit: 'contain',
+              borderRadius: '6px',
+              boxShadow: '0 12px 48px rgba(0,0,0,0.6)',
+              imageRendering: 'auto',
+            }}
+          />
+          {preview.plate && (
+            <div
+              style={{
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontSize: '1.1rem',
+                letterSpacing: '0.08em',
+                color: '#fff',
+                background: 'rgba(0,0,0,0.5)',
+                padding: '0.35rem 0.8rem',
+                borderRadius: '4px',
+              }}
+            >
+              {preview.plate}
+            </div>
+          )}
+          <div style={{ color: '#9fb0c3', fontSize: '0.85rem' }}>
+            Click anywhere or press Esc to close
+          </div>
+        </div>
+      )}
     </div>
   );
 }

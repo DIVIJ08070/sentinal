@@ -123,7 +123,7 @@ class AnprDetector(Detector):
         min_plate_confidence: float = 0.35,
         dedup_window_ms: float = 5000.0,
         plateless_interval_ms: float = 3000.0,
-        snapshot_max_width: int = 320,
+        snapshot_max_width: int = 640,
         min_crop_px: int = 32,
         plate_model: str = "yolo-v9-t-384-license-plate-end2end",
         plate_conf: float = 0.25,
@@ -542,8 +542,8 @@ class AnprDetector(Detector):
     # width (<= snapshot_max_width, contract), MAX_VEHICLE_H caps the vehicle
     # panel and STRIP_H the evidence strip so the composite is always wider
     # than tall (a landscape evidence card) and comfortably under ~40 KB.
-    _COMPOSITE_MAX_VEHICLE_H = 200
-    _COMPOSITE_STRIP_H = 96
+    _COMPOSITE_MAX_VEHICLE_H = 400
+    _COMPOSITE_STRIP_H = 192
 
     def _encode_snapshot(
         self, crop, plate_region=None, plate=None, confidence=None
@@ -559,7 +559,7 @@ class AnprDetector(Detector):
         try:
             if crop is None or crop.shape[0] < 1 or crop.shape[1] < 1:
                 return None
-            panel_w = min(int(self.snapshot_max_width), 360)
+            panel_w = min(int(self.snapshot_max_width), 720)
 
             # --- vehicle panel: fit width, then centre-crop to a max height so
             # the whole card stays landscape (the plate close-up is in the strip
@@ -575,32 +575,37 @@ class AnprDetector(Detector):
                 vehicle = vehicle[top:top + self._COMPOSITE_MAX_VEHICLE_H]
 
             # --- evidence strip: dark band with the enhanced plate + text. ---
+            # Everything here scales with k so the strip reads correctly at any
+            # snapshot_max_width (k = 1.0 at the original 96 px strip height).
             strip_h = self._COMPOSITE_STRIP_H
+            k = strip_h / 96.0
             strip = np.full((strip_h, panel_w, 3), (24, 24, 24), dtype=np.uint8)
-            pad = 8
+            pad = max(1, int(round(8 * k)))
+            thin = max(1, int(round(k)))
+            thick = max(2, int(round(2 * k)))
             text_x = pad
             plate_src = plate_region if plate_region is not None else crop
             enhanced = self._enhance_plate(plate_src)
             if enhanced is not None and enhanced.shape[0] >= 1 and enhanced.shape[1] >= 1:
                 box_h = strip_h - 2 * pad
-                box_w = min(panel_w // 2, 200)
+                box_w = min(panel_w // 2, int(round(200 * k)))
                 eh, ew = enhanced.shape[:2]
                 s = min(box_w / float(ew), box_h / float(eh))
                 pw, ph = max(1, int(round(ew * s))), max(1, int(round(eh * s)))
-                plate_img = cv2.resize(enhanced, (pw, ph), interpolation=cv2.INTER_AREA)
+                plate_img = cv2.resize(enhanced, (pw, ph), interpolation=cv2.INTER_CUBIC)
                 y0 = (strip_h - ph) // 2
                 strip[y0:y0 + ph, pad:pad + pw] = plate_img
-                cv2.rectangle(strip, (pad, y0), (pad + pw, y0 + ph), (0, 215, 255), 1)
+                cv2.rectangle(strip, (pad, y0), (pad + pw, y0 + ph), (0, 215, 255), thin)
                 text_x = pad + pw + pad
 
-            cv2.putText(strip, "ENHANCED PLATE", (text_x, 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 200, 255), 1, cv2.LINE_AA)
+            cv2.putText(strip, "ENHANCED PLATE", (text_x, int(round(20 * k))),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42 * k, (150, 200, 255), thin, cv2.LINE_AA)
             if plate:
-                cv2.putText(strip, str(plate), (text_x, 52),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.72, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(strip, str(plate), (text_x, int(round(52 * k))),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.72 * k, (255, 255, 255), thick, cv2.LINE_AA)
             conf_txt = f"conf {confidence:.2f}" if confidence is not None else "conf n/a"
-            cv2.putText(strip, conf_txt, (text_x, 80),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 215, 255), 1, cv2.LINE_AA)
+            cv2.putText(strip, conf_txt, (text_x, int(round(80 * k))),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5 * k, (0, 215, 255), thin, cv2.LINE_AA)
 
             composite = np.vstack([vehicle, strip])
             ok, buf = cv2.imencode(
