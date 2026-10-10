@@ -110,6 +110,9 @@ Key env vars: `DATABASE_URL` (default `sqlite:///./sentinel.db`), `SENTINEL_HOST
 (catalogue host), `GRID_RTSP_AUTH` (`email:password` for the credentialed grid),
 `SENTINEL_HIDE_DETECTORS` (default `simulator,mock` — hides non-live rows from
 the alerts feed and stats; route search always sees all).
+Plate reader: RapidOCR + an Indian plate-syntax gate is the default when `rapidocr-onnxruntime` is
+installed (`SENTINEL_OCR_ENGINE=fast-plate` forces the old reader; see [docs/OCR_EVALUATION.md](docs/OCR_EVALUATION.md)).
+`SENTINEL_SAVE_CROPS=<dir>` saves each plate crop + the live read for offline scoring.
 
 ---
 
