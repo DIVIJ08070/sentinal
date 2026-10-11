@@ -1,5 +1,5 @@
 """Pydantic schemas, UTC ISO8601-Z serialization helpers, and response builders."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Annotated, Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, model_validator
@@ -28,6 +28,15 @@ UTCDateTime = Annotated[datetime, PlainSerializer(iso_z, return_type=str)]
 Category = Literal["stolen", "wanted", "suspect", "blacklisted", "other"]
 Priority = Literal["high", "medium", "low"]
 CameraStatus = Literal["live", "down", "unknown"]
+MaintenanceStatus = Literal["ok", "due", "under_repair", "faulty"]
+MAINTENANCE_STATUSES = ("ok", "due", "under_repair", "faulty")
+
+# Registry metadata fields (Model 1) - shared by create, patch, CSV import,
+# catalogue sync and export so every onboarding path carries the same set.
+REGISTRY_FIELDS = (
+    "camera_type", "ownership", "installed_on", "amc_expiry",
+    "maintenance_status", "last_maintenance_on",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +59,29 @@ class CameraCreate(BaseModel):
     whep_url: Optional[str] = None
     storage_type: Optional[str] = None
     retention_days: Optional[int] = None
+    camera_type: Optional[str] = None
+    ownership: Optional[str] = None
+    installed_on: Optional[date] = None
+    amc_expiry: Optional[date] = None
+    maintenance_status: Optional[MaintenanceStatus] = None
+    last_maintenance_on: Optional[date] = None
+
+
+class CameraPatch(BaseModel):
+    """Registry metadata edit (PATCH /api/cameras/{id}). Only the fields sent
+    are changed; every change is written to the audit trail with old -> new."""
+    name: Optional[str] = None
+    department: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    storage_type: Optional[str] = None
+    retention_days: Optional[int] = None
+    camera_type: Optional[str] = None
+    ownership: Optional[str] = None
+    installed_on: Optional[date] = None
+    amc_expiry: Optional[date] = None
+    maintenance_status: Optional[MaintenanceStatus] = None
+    last_maintenance_on: Optional[date] = None
 
 
 class CameraOut(BaseModel):
@@ -77,6 +109,12 @@ class CameraOut(BaseModel):
     last_frame_age_s: Optional[float]
     reconnects: Optional[int]
     bandwidth_kbps: Optional[float]
+    camera_type: Optional[str] = None
+    ownership: Optional[str] = None
+    installed_on: Optional[date] = None
+    amc_expiry: Optional[date] = None
+    maintenance_status: Optional[str] = None
+    last_maintenance_on: Optional[date] = None
     created_at: UTCDateTime
 
 

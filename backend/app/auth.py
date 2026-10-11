@@ -16,6 +16,11 @@ When auth is ON:
 - audit rows and the dossier's operator field take their identity from the
   TOKEN, never from the spoofable X-Operator header.
 
+Department-wise access (Model 1): a token may carry a fourth field, its
+department - "tok-rto:rto-desk:operator:RTO". A non-admin principal with a
+department only sees, exports and edits that department's cameras in the
+registry; admins and department-less tokens see everything.
+
 Deliberately not JWT: three static demo principals demonstrate the role gate
 and give the chain-of-custody document a real authenticated principal; key
 management/IAM integration stays a design provision (HLD §7).
@@ -28,14 +33,24 @@ ROLE_RANK = {"viewer": 0, "operator": 1, "admin": 2}
 
 
 def _token_map() -> dict:
-    """Parse SENTINEL_TOKENS ("token:name:role,...") at call time (testable)."""
+    """Parse SENTINEL_TOKENS ("token:name:role[:department],...") at call time (testable)."""
     raw = os.getenv("SENTINEL_TOKENS", "").strip()
     tokens: dict[str, dict] = {}
     for part in raw.split(","):
-        bits = [b.strip() for b in part.strip().split(":")]
-        if len(bits) == 3 and all(bits) and bits[2] in ROLE_RANK:
-            tokens[bits[0]] = {"name": bits[1], "role": bits[2]}
+        bits = [b.strip() for b in part.strip().split(":", 3)]
+        if len(bits) in (3, 4) and all(bits[:3]) and bits[2] in ROLE_RANK:
+            department = bits[3] if len(bits) == 4 and bits[3] else None
+            tokens[bits[0]] = {"name": bits[1], "role": bits[2], "department": department}
     return tokens
+
+
+def department_scope(request: Request | None) -> str | None:
+    """The department this request is confined to in the camera registry, or
+    None for full visibility (open demo mode, admins, department-less tokens)."""
+    principal = principal_for(request)
+    if principal is None or principal["role"] == "admin":
+        return None
+    return principal.get("department")
 
 
 def auth_enabled() -> bool:

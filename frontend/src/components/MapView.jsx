@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   MapContainer,
   TileLayer,
+  Circle,
   CircleMarker,
   Marker,
   Polyline,
@@ -11,7 +12,12 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { formatLocal } from '../api.js';
+import { api, formatLocal } from '../api.js';
+
+const TYPE_NOT_RECORDED = '__none__';
+// Coverage layer (registry gap analysis): camera reach + district HQ status.
+const COVERAGE_COLOR = '#38bdf8';
+const UNCOVERED_COLOR = '#ef4444';
 
 const GUJARAT_CENTER = [22.6, 71.6];
 const GUJARAT_ZOOM = 7;
@@ -82,10 +88,19 @@ export default function MapView({
   syncing,
 }) {
   const [department, setDepartment] = useState('all');
+  const [cameraType, setCameraType] = useState('all');
+  const [showCoverage, setShowCoverage] = useState(false);
+  const [coverage, setCoverage] = useState(null);
+  const [coverageError, setCoverageError] = useState(null);
 
   const departments = useMemo(
     () =>
       [...new Set(cameras.map((c) => c.department).filter(Boolean))].sort(),
+    [cameras]
+  );
+
+  const cameraTypes = useMemo(
+    () => [...new Set(cameras.map((c) => c.camera_type).filter(Boolean))].sort(),
     [cameras]
   );
 
@@ -95,10 +110,29 @@ export default function MapView({
         (c) =>
           c.lat != null &&
           c.lon != null &&
-          (department === 'all' || c.department === department)
+          (department === 'all' || c.department === department) &&
+          (cameraType === 'all' ||
+            (cameraType === TYPE_NOT_RECORDED ? !c.camera_type : c.camera_type === cameraType))
       ),
-    [cameras, department]
+    [cameras, department, cameraType]
   );
+
+  // Coverage layer data comes from the registry gap analysis (district HQ
+  // coverage); refreshed whenever the registry changes while it is shown.
+  useEffect(() => {
+    if (!showCoverage) return undefined;
+    let cancelled = false;
+    setCoverageError(null);
+    api
+      .gapAnalysis()
+      .then((g) => !cancelled && setCoverage(g.coverage))
+      .catch((err) => !cancelled && setCoverageError(err.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [showCoverage, cameras]);
+
+  const coverageRadiusM = coverage ? coverage.radius_km * 1000 : 0;
 
   // Sequence numbers follow the full table ordering (rejected rows included)
   // so map markers and table rows stay in correspondence.
@@ -132,6 +166,50 @@ export default function MapView({
         />
         <MapController panTarget={panTarget} route={route} />
 
+        {showCoverage &&
+          coverage &&
+          visible.map((c) => (
+            <Circle
+              key={`cov-${c.id}`}
+              center={[c.lat, c.lon]}
+              radius={coverageRadiusM}
+              interactive={false}
+              pathOptions={{
+                color: COVERAGE_COLOR,
+                weight: 0.5,
+                opacity: 0.35,
+                fillColor: COVERAGE_COLOR,
+                fillOpacity: 0.06,
+              }}
+            />
+          ))}
+
+        {showCoverage &&
+          coverage &&
+          coverage.districts.map((d) => (
+            <CircleMarker
+              key={`hq-${d.district}`}
+              center={[d.lat, d.lon]}
+              radius={6}
+              pathOptions={{
+                color: d.covered ? COVERAGE_COLOR : UNCOVERED_COLOR,
+                fillColor: '#0b1220',
+                fillOpacity: 0.9,
+                weight: 2.5,
+                dashArray: d.covered ? null : '3 3',
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -6]}>
+                <strong>{d.district}</strong> ({d.hq}) —{' '}
+                {d.covered
+                  ? `covered: ${d.cameras_within_radius} camera(s) within ${coverage.radius_km} km`
+                  : `NOT covered${
+                      d.nearest_km != null ? `: nearest camera ${d.nearest_km} km away` : ''
+                    }`}
+              </Tooltip>
+            </CircleMarker>
+          ))}
+
         {visible.map((c) => (
           <CircleMarker
             key={c.id}
@@ -153,6 +231,15 @@ export default function MapView({
                 {c.codec ? ` · ${String(c.codec).toUpperCase()}` : ''}
                 {c.width && c.height ? ` · ${c.width}x${c.height}` : ''}
               </div>
+              {(c.camera_type || c.maintenance_status) && (
+                <div className="popup-line">
+                  {c.camera_type ? `Type: ${c.camera_type}` : ''}
+                  {c.camera_type && c.maintenance_status ? ' · ' : ''}
+                  {c.maintenance_status
+                    ? `Maintenance: ${c.maintenance_status.replace('_', ' ')}`
+                    : ''}
+                </div>
+              )}
               <div className="popup-actions">
                 <button
                   className="btn btn-amber btn-small"
@@ -262,6 +349,36 @@ export default function MapView({
             </option>
           ))}
         </select>
+        <select
+          value={cameraType}
+          onChange={(e) => setCameraType(e.target.value)}
+          title="Filter cameras by camera type"
+        >
+          <option value="all">All camera types</option>
+          {cameraTypes.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+          <option value={TYPE_NOT_RECORDED}>Type not recorded</option>
+        </select>
+        <label className="map-toggle" title="Camera reach and district HQ coverage (registry gap analysis)">
+          <input
+            type="checkbox"
+            checked={showCoverage}
+            onChange={(e) => setShowCoverage(e.target.checked)}
+          />
+          Coverage
+        </label>
+        {showCoverage && coverage && (
+          <span className="map-coverage-note">
+            {coverage.districts.filter((d) => d.covered).length}/{coverage.districts.length}{' '}
+            district HQs within {coverage.radius_km} km
+          </span>
+        )}
+        {showCoverage && coverageError && (
+          <span className="map-coverage-note error">coverage unavailable</span>
+        )}
       </div>
 
       <div className="map-overlay bottom-left">
@@ -281,6 +398,16 @@ export default function MapView({
           <div className="row">
             <span className="legend-rejected" /> Physics-rejected sighting
           </div>
+          {showCoverage && (
+            <>
+              <div className="row">
+                <span className="legend-hq covered" /> District HQ covered
+              </div>
+              <div className="row">
+                <span className="legend-hq uncovered" /> District HQ not covered
+              </div>
+            </>
+          )}
         </div>
       </div>
 

@@ -947,6 +947,54 @@ label.field {
   text-transform: uppercase;
 }
 
+/* Registry actions (export / gap report) and per-camera maintenance badge. */
+.cam-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cam-actions .btn {
+  text-decoration: none;
+}
+
+.maint-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.maint-badge.due { color: var(--amber); }
+.maint-badge.under_repair { color: #fb923c; }
+.maint-badge.faulty { color: #f87171; }
+
+.maint-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.maint-editor .note {
+  flex-basis: 100%;
+  font-size: 11px;
+}
+
+.maint-editor .note.error {
+  color: #fca5a5;
+}
+
 /* ---- Health tab --------------------------------------------------------- */
 
 /* Totals stay pinned while the per-camera table scrolls under them
@@ -1139,8 +1187,61 @@ label.field {
 .map-overlay.top-left {
   top: 12px;
   left: 12px;
+  right: 12px;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+  pointer-events: none; /* the strip spans the map; only its controls take clicks */
+}
+
+.map-overlay.top-left > * {
+  pointer-events: auto;
+}
+
+.map-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  user-select: none;
+}
+
+.map-coverage-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(13, 20, 36, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+}
+
+.map-coverage-note.error {
+  color: #fca5a5;
+}
+
+.legend-hq {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #0b1220;
+  flex: 0 0 auto;
+}
+
+.legend-hq.covered {
+  border: 2.5px solid #38bdf8;
+}
+
+.legend-hq.uncovered {
+  border: 2.5px dashed #ef4444;
 }
 
 .map-overlay.bottom-left {

@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -51,6 +52,15 @@ class Camera(Base):
     last_frame_age_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     reconnects: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bandwidth_kbps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Registry / asset metadata (Model 1): what the camera is, who owns it, how
+    # old it is and whether it is serviced. All optional - the gap-analysis
+    # report (routers/registry.py) flags what is missing rather than guessing.
+    camera_type: Mapped[str | None] = mapped_column(String(32), nullable=True)  # e.g. bullet|dome|ptz|anpr|analog
+    ownership: Mapped[str | None] = mapped_column(String(128), nullable=True)  # owning office / agency
+    installed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    amc_expiry: Mapped[date | None] = mapped_column(Date, nullable=True)  # maintenance contract end
+    maintenance_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # ok|due|under_repair|faulty
+    last_maintenance_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
@@ -74,8 +84,8 @@ class Detection(Base):
     camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id"), index=True)
     object_type: Mapped[str] = mapped_column(String(32), default="vehicle")
     # Coarse vehicle class from the ingest detector's YOLO COCO id — one of
-    # car|motorcycle|bus|truck, else null (SQLite recreates the table on the
-    # next backend start, so no migration is needed for this new column).
+    # car|motorcycle|bus|truck, else null (added to existing databases by
+    # db.add_missing_columns() at startup).
     vehicle_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     plate: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)  # normalized
     # The raw OCR read exactly as posted, before normalization — surfaced as

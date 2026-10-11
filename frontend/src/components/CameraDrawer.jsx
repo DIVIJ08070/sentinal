@@ -1,6 +1,66 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { AI_VIEW_BASE, aiViewKey, aiViewList, aiViewStreamUrl, formatLocal } from '../api.js';
+import { AI_VIEW_BASE, aiViewKey, aiViewList, aiViewStreamUrl, api, formatLocal } from '../api.js';
+
+const MAINTENANCE_OPTIONS = [
+  ['ok', 'OK'],
+  ['due', 'Due'],
+  ['under_repair', 'Under repair'],
+  ['faulty', 'Faulty'],
+];
+
+/**
+ * Maintenance status editor (registry, Model 1). Saves via PATCH
+ * /api/cameras/{id}; the backend records the old -> new change in the
+ * hash-chained audit trail.
+ */
+function MaintenanceEditor({ camera, onUpdated }) {
+  const [status, setStatus] = useState(camera.maintenance_status || '');
+  const [lastDone, setLastDone] = useState(camera.last_maintenance_on || '');
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState(null);
+
+  const dirty =
+    status !== (camera.maintenance_status || '') ||
+    lastDone !== (camera.last_maintenance_on || '');
+
+  const save = async () => {
+    setSaving(true);
+    setNote(null);
+    try {
+      await api.patchCamera(camera.id, {
+        maintenance_status: status || null,
+        last_maintenance_on: lastDone || null,
+      });
+      setNote({ ok: true, text: 'Saved — change recorded in the audit trail.' });
+      if (onUpdated) onUpdated();
+    } catch (err) {
+      setNote({ ok: false, text: `Not saved: ${err.message}` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="maint-editor">
+      <span>Maintenance</span>
+      <select value={status} onChange={(e) => setStatus(e.target.value)}>
+        <option value="">Not recorded</option>
+        {MAINTENANCE_OPTIONS.map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <span>last serviced</span>
+      <input type="date" value={lastDone} onChange={(e) => setLastDone(e.target.value)} />
+      <button className="btn btn-small" onClick={save} disabled={!dirty || saving}>
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+      {note && <div className={`note${note.ok ? '' : ' error'}`}>{note.text}</div>}
+    </div>
+  );
+}
 
 /**
  * Shared HLS player. Attaches hls.js when supported (falls back to native HLS
@@ -370,7 +430,7 @@ function MetaRow({ k, v, mono, title }) {
   );
 }
 
-export default function CameraDrawer({ camera, onClose }) {
+export default function CameraDrawer({ camera, onClose, onUpdated }) {
   if (!camera) return null;
 
   return (
@@ -384,7 +444,7 @@ export default function CameraDrawer({ camera, onClose }) {
       </div>
 
       <div className="drawer-body">
-        <StreamView key={camera.id} camera={camera} scope="drawer" />
+        <StreamView key={`stream-${camera.id}`} camera={camera} scope="drawer" />
 
         <div className="meta-grid">
           <MetaRow
@@ -394,6 +454,20 @@ export default function CameraDrawer({ camera, onClose }) {
           <MetaRow k="Source" v={camera.source} />
           <MetaRow k="Department" v={camera.department} />
           <MetaRow k="Status" v={camera.status || 'unknown'} />
+          <MetaRow k="Ownership" v={camera.ownership || 'not recorded'} />
+          <MetaRow k="Camera type" v={camera.camera_type || 'not recorded'} />
+          <MetaRow k="Installed" v={camera.installed_on || 'not recorded'} />
+          <MetaRow k="AMC until" v={camera.amc_expiry || 'not recorded'} />
+          <MetaRow
+            k="Maintenance"
+            v={
+              camera.maintenance_status
+                ? `${camera.maintenance_status.replace('_', ' ')}${
+                    camera.last_maintenance_on ? ` · serviced ${camera.last_maintenance_on}` : ''
+                  }`
+                : 'not recorded'
+            }
+          />
           <MetaRow
             k="Coordinates"
             v={
@@ -435,6 +509,7 @@ export default function CameraDrawer({ camera, onClose }) {
           <MetaRow k="WHEP" v={camera.whep_url} mono />
         </div>
       </div>
+        <MaintenanceEditor key={`maint-${camera.id}`} camera={camera} onUpdated={onUpdated} />
     </div>
   );
 }
