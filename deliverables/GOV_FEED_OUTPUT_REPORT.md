@@ -2,7 +2,7 @@
 
 **Platform:** SENTINEL — Gujarat CCTV Hackathon 2026 prototype
 
-**Submitted by:** Divij Patel — Individual participant (Category 1) ·
+**Submitted by:** Divij Patel, Meet Patel, Krish Patel — Team, Category 1 ·
 vatsunp11@gmail.com
 
 ## What was onboarded, and how

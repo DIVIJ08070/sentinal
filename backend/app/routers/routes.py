@@ -21,6 +21,7 @@ from ..audit import record as audit_record, resolve_operator
 from ..db import get_db
 from ..matching import normalize, score_match
 from ..models import Camera, Detection
+from ..plate_arbiter import arbitrate
 from ..schemas import as_naive_utc, iso_z
 from ..sources import is_simulated
 
@@ -489,6 +490,13 @@ def build_assessment_payload(db: Session, plate: str, since=None, until=None) ->
     agreement = len(points)
     accepted = route["stats"]["sightings_count"]
 
+    # The king: reconcile every raw OCR read of this vehicle into one
+    # grammar-checked plate (deterministic, open-source). Operates on the raw
+    # reads (matched_from), so it can recover misreads a single frame got wrong.
+    king_input = [(p.get("matched_from") or target, p.get("confidence") or 0.5)
+                  for p in points]
+    king = arbitrate(king_input) if king_input else None
+
     # Deterministic trust band over measured signals (a heuristic, labelled).
     flags = []
     if not points:
@@ -509,10 +517,20 @@ def build_assessment_payload(db: Session, plate: str, since=None, until=None) ->
             band = "low"
         if agreement == 1:
             flags.append("single read — low corroboration, treat as a lead not a fact")
+        if king and king.get("plate") and king["plate"] != target:
+            flags.insert(0, f"reconciled across {king['support']} reads to {king['plate']} (grammar-checked)")
 
     return {
         "plate": target,
         "generated_at": iso_z(datetime.utcnow()),
+        "reconciled": ({
+            "plate": king["plate"],
+            "confidence": king["confidence"],
+            "well_formed": king["well_formed"],
+            "format": king.get("format"),
+            "from_reads": king["support"],
+            "rationale": king["rationale"],
+        } if king else None),
         "ocr": {
             "reads": agreement,
             "cameras": len(cameras),

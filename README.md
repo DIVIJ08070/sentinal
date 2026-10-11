@@ -2,6 +2,8 @@
 
 Prototype for the **Gujarat Police CCTV Hackathon 2026** (sentinel.gujarat.gov.in).
 
+**Team (Category 1):** Divij Patel · Meet Patel · Krish Patel · vatsunp11@gmail.com
+
 **Plate to court in sixty seconds — on the cameras Gujarat already owns.**
 SENTINEL integrates heterogeneous CCTV from 26 departments into one command
 centre and turns a registration number into a court-ready answer: type a plate
@@ -21,6 +23,15 @@ leaves departmental DVRs, ₹3–7k per *existing* camera), not adjectives.
 (unified viewing + central AI analytics + watchlist alerts).**
 
 ---
+
+## Recent updates & decisions (Oct 2026)
+
+- **ANPR reader → RapidOCR + Indian plate-syntax gate.** The old reader was capped at 9 character slots (couldn't emit a 10-char plate); a 19-crop evaluation moved exact reads from **1/19 to 11/19** (docs/OCR_EVALUATION.md). CPU-only; falls back to the old reader if absent.
+- **TrustTrace** — an explainable, deterministic evidence assessment (`GET /api/vehicles/{plate}/assessment` + dashboard panel): OCR confidence/spread, cross-read agreement, fuzzy recoveries, route plausibility with a possible-cloned-plate flag, and hash-chained integrity. Never asserts a read as fact.
+- **SQLite → PostgreSQL** (app is DB-agnostic), plus a **full Docker stack** (`docker compose up`). A streaming read-replica was proven at **~16 ms replay lag**.
+- **Object storage → SeaweedFS** (MinIO gated its registries); S3-compatible, benchmarked at ~345 objects/s.
+- **Production-component PoC** in `deploy/poc/` — the real app on a replicated Postgres + Redpanda (Kafka API, ~40× statewide event headroom) + SeaweedFS + K8s manifests, with measured numbers.
+- **Hardware posture: CPU-first.** ANPR runs CPU-only; GPUs are an optional accelerator, so procurement can follow Make-in-India with zero imported hardware. Full rationale + numbers in HLD §13.
 
 ## What it does
 

@@ -10,7 +10,7 @@
 **Declared solution model:** Hybrid — Model 1 (Camera Registry & GIS,
 mandatory) + Model 2/4 (unified viewing + central AI analytics + watchlist
 alerts).
-**Category:** Category 1 · **Individual** participant.
+**Category:** Category 1 · **Team** (Divij Patel, Meet Patel, Krish Patel).
 
 ---
 
@@ -102,7 +102,7 @@ fields; paste video links (and optional repo/hosted URLs) in the link fields.
 
 ### Category
 
-**Category 1 — Individual.**
+**Category 1 — Team.**
 Solution model: **Hybrid — Model 1 (Camera Registry & GIS) + Model 2/4
 (unified viewing + central AI analytics + watchlist alerts).**
 
@@ -185,7 +185,7 @@ CPU-only inference (no GPU required).
 
 ## 5. Final pre-submit verification (run Sept 7 morning)
 
-- [ ] Portal form: team details, **Category 1 / Individual**, model
+- [ ] Portal form: team details, **Category 1 / Team**, model
       declaration **Hybrid 1 + 2/4**, summaries pasted (word limits!).
 - [ ] All file uploads attached: presentation (PPTX + PDF),
       `SENTINEL_HLD.pdf`, `GOV_FEED_OUTPUT_REPORT.pdf`.

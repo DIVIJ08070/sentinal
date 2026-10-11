@@ -1,0 +1,141 @@
+# SENTINEL — production-component PoC.
+#
+# A thin, single-instance proof of the production tiers the HLD describes, so
+# the roadmap is demonstrated with running components and real numbers, not a
+# diagram. It is a SEPARATE stack (project "sentinel-poc", its own ports) and
+# never touches the live demo on 8080/8001.
+#
+#   docker compose -f deploy/poc/docker-compose.poc.yml up -d
+#
+# Proves: PostgreSQL streaming replication (DR), S3 object storage (snapshot
+# tier), and a Kafka-API event bus (ingest fan-out). K8s is proven by the
+# manifests in deploy/poc/k8s (declarative, GitOps-ready; runnable on kind).
+name: sentinel-poc
+
+services:
+  # --- DR tier: primary + streaming read-replica -------------------------
+  pg-primary:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
+      POSTGRES_DB: sentinel
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+    volumes:
+      - ./pg/01-init-replication.sh:/docker-entrypoint-initdb.d/01-init-replication.sh:ro
+      - pgprimary:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pg-replica:
+    image: postgres:16-alpine
+    user: root
+    environment:
+      PGPASSWORD: replicator
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+    # Base-backup the primary on first boot, then stream. -R writes
+    # standby.signal + primary_conninfo so it comes up as a hot standby.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -e
+        DATA=/var/lib/postgresql/data
+        if [ ! -s "$$DATA/PG_VERSION" ]; then
+          until pg_isready -h pg-primary -U replicator -d sentinel; do echo "waiting for primary..."; sleep 2; done
+          rm -rf "$$DATA"/*
+          pg_basebackup -h pg-primary -U replicator -D "$$DATA" -Fp -Xs -P -R -S replica_slot
+          chown -R postgres:postgres "$$DATA"
+          chmod 700 "$$DATA"
+        fi
+        exec gosu postgres postgres -c hot_standby=on
+    volumes:
+      - pgreplica:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+
+  # --- object-storage tier: S3-compatible ---------------------------------
+  # SeaweedFS, a freely-available MinIO successor (MinIO gated its registries).
+  # One process runs master+volume+filer+S3; the S3 API is on :8333.
+  objstore:
+    image: chrislusf/seaweedfs:latest
+    command: server -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -dir=/data
+    ports:
+      - "8333:8333"   # S3 API
+    volumes:
+      - objstore:/data
+      - ./s3/s3.json:/etc/seaweedfs/s3.json:ro
+
+  # --- event-bus tier: Kafka API (Redpanda, single broker) ---------------
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092
+      - --advertise-kafka-addr=INTERNAL://redpanda:9092,EXTERNAL://localhost:19092
+    ports:
+      - "19092:19092"   # Kafka API from host
+    volumes:
+      - redpanda:/var/lib/redpanda/data
+
+  # --- the REAL SENTINEL app, deployed on this production topology ---------
+  # Same images the demo builds (same ANPR algorithm, matching, API, UI),
+  # pointed at the REPLICATED primary. This is what proves the PoC is our
+  # actual platform in prod shape, not generic infrastructure.
+  adapter:
+    image: sentinel-adapter:latest
+    command: python ingest/grid_adapter.py --file ingest/grid_catalogue.json --port 8890
+    environment:
+      GRID_ADAPTER_BIND: "0.0.0.0"
+      GRID_HLS_TEMPLATE: "http://localhost:8888/{id}/index.m3u8"
+    expose:
+      - "8890"
+
+  backend:
+    image: sentinel-backend:latest
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+      adapter:
+        condition: service_started
+    environment:
+      # the app writes to the PRIMARY; pg-replica streams it as a hot standby
+      DATABASE_URL: postgresql+psycopg2://sentinel:sentinel@pg-primary:5432/sentinel
+      SENTINEL_HOST: http://adapter:8890
+    ports:
+      - "8002:8000"   # prod-topology backend API
+
+  frontend:
+    image: sentinel-frontend:latest
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "8090:80"     # prod-topology dashboard
+
+volumes:
+  pgprimary:
+  pgreplica:
+  objstore:
+  redpanda:

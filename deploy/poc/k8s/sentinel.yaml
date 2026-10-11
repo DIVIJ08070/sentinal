@@ -1,0 +1,197 @@
+# SENTINEL — Kubernetes manifests (production orchestration form).
+#
+# The SAME container images the docker-compose stack builds, expressed
+# declaratively: Deployments (1 replica for the PoC — scale with `replicas`
+# or the HPA below), Services, an Ingress (the LoadBalancer/L7 entry), and a
+# HorizontalPodAutoscaler to show the scale-out path. Apply on any cluster:
+#
+#   kind create cluster --name sentinel
+#   kubectl apply -f deploy/poc/k8s/sentinel.yaml
+#
+# This proves the GitOps/K8s roadmap item without needing a live cluster for
+# the demo; `kubectl get pods -n sentinel` is the evidence.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sentinel
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sentinel-db
+  namespace: sentinel
+type: Opaque
+stringData:
+  DATABASE_URL: postgresql+psycopg2://sentinel:sentinel@postgres:5432/sentinel
+---
+# --- PostgreSQL (StatefulSet so the volume is stable) ---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: sentinel
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - { name: POSTGRES_USER, value: sentinel }
+            - { name: POSTGRES_PASSWORD, value: sentinel }
+            - { name: POSTGRES_DB, value: sentinel }
+          ports: [{ containerPort: 5432 }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 5Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: sentinel
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]
+  clusterIP: None
+---
+# --- Catalogue adapter ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adapter
+  namespace: sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: adapter }
+  template:
+    metadata:
+      labels: { app: adapter }
+    spec:
+      containers:
+        - name: adapter
+          image: sentinel-adapter:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "ingest/grid_adapter.py", "--file", "ingest/grid_catalogue.json", "--port", "8890"]
+          env:
+            - { name: GRID_ADAPTER_BIND, value: "0.0.0.0" }
+            - { name: GRID_HLS_TEMPLATE, value: "http://localhost:8888/{id}/index.m3u8" }
+          ports: [{ containerPort: 8890 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adapter
+  namespace: sentinel
+spec:
+  selector: { app: adapter }
+  ports: [{ port: 8890, targetPort: 8890 }]
+---
+# --- Backend API (scaled by the HPA) ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: backend }
+  template:
+    metadata:
+      labels: { app: backend }
+    spec:
+      containers:
+        - name: backend
+          image: sentinel-backend:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: sentinel-db, key: DATABASE_URL } }
+            - { name: SENTINEL_HOST, value: "http://adapter:8890" }
+          ports: [{ containerPort: 8000 }]
+          readinessProbe:
+            httpGet: { path: /api/stats, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "512Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: sentinel
+spec:
+  selector: { app: backend }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend
+  namespace: sentinel
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: backend }
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 65 }
+---
+# --- Frontend (nginx serving the SPA + proxying /api, /ws) ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: frontend }
+  template:
+    metadata:
+      labels: { app: frontend }
+    spec:
+      containers:
+        - name: frontend
+          image: sentinel-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 80 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: sentinel
+spec:
+  selector: { app: frontend }
+  ports: [{ port: 80, targetPort: 80 }]
+---
+# --- Ingress (the L7 entry / LoadBalancer in cloud) ---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sentinel
+  namespace: sentinel
+spec:
+  rules:
+    - http:
+        paths:
+          - { path: /api, pathType: Prefix, backend: { service: { name: backend,  port: { number: 8000 } } } }
+          - { path: /ws,  pathType: Prefix, backend: { service: { name: backend,  port: { number: 8000 } } } }
+          - { path: /,    pathType: Prefix, backend: { service: { name: frontend, port: { number: 80 } } } }

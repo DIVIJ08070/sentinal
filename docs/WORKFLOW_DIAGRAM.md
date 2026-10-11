@@ -1,6 +1,6 @@
 # SENTINEL — Workflow & Integration Diagram
 
-**Gujarat Police CCTV Hackathon 2026 · Unified CCTV Command Platform · Divij Patel**
+**Gujarat Police CCTV Hackathon 2026 · Unified CCTV Command Platform · Divij Patel · Meet Patel · Krish Patel**
 
 Three views of one system: (1) the end-to-end integration workflow as built and demonstrated on the live sandbox grid, (2) the real-time detection → watchlist → alert sequence, and (3) the statewide three-tier deployment topology scaling the same contracts to ~80,000 cameras.
 

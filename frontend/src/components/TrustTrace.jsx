@@ -107,6 +107,31 @@ export default function TrustTrace({ plate }) {
 
       {open && (
         <div style={{ padding: '0.85rem 0.9rem', display: 'grid', gap: '0.85rem' }}>
+          {/* the king's reconciled verdict across all reads */}
+          {data.reconciled && data.reconciled.plate && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap',
+              padding: '0.6rem 0.75rem', borderRadius: '6px',
+              background: 'var(--surface-2, rgba(127,127,127,0.07))',
+              borderLeft: `4px solid ${data.reconciled.well_formed ? '#1E7A52' : '#C8860B'}`,
+            }}>
+              <span style={{ fontSize: '0.64rem', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.6 }}>
+                Reconciled plate
+              </span>
+              <span style={{ fontFamily: 'ui-monospace, Menlo, monospace', fontWeight: 700, fontSize: '1.4rem', letterSpacing: '0.06em' }}>
+                {data.reconciled.plate}
+              </span>
+              <span style={{ fontSize: '0.78rem', opacity: 0.7 }}>
+                {pct(data.reconciled.confidence)} · {data.reconciled.format} · from {data.reconciled.from_reads} reads
+              </span>
+              {data.reconciled.rationale && data.reconciled.rationale[0] &&
+                !/unanimous/.test(data.reconciled.rationale[0]) && (
+                <span style={{ flexBasis: '100%', fontSize: '0.74rem', color: '#8fb6de' }}>
+                  {data.reconciled.rationale[0]}
+                </span>
+              )}
+            </div>
+          )}
           {/* measured signal tiles */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(6.5rem, 1fr))', gap: '0.5rem' }}>
             <Tile k="Best OCR" v={pct(ocr.best_confidence)} />

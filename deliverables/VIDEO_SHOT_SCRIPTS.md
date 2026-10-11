@@ -302,5 +302,5 @@ only.
 - [ ] Play both exports start-to-finish with audio; UI text legible at 1080p.
 - [ ] Video A length within 2:00–3:00. Video B ≤ ~5:30.
 - [ ] No simulator data, no mock detector, no canned clips anywhere in frame.
-- [ ] Filenames + report header carry the participant name (Divij Patel — Individual, Category 1) and hackathon name.
+- [ ] Filenames + report header carry the participant name (Divij Patel, Meet Patel, Krish Patel — Team, Category 1) and hackathon name.
 - [ ] Upload well before the 7 Sept deadline (portal will be busy).

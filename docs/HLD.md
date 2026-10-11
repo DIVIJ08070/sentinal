@@ -2,7 +2,7 @@
 
 Gujarat Police CCTV Hackathon 2026 — submission document.
 
-**Submitted by:** Divij Patel — Individual participant (Category 1) ·
+**Submitted by:** Divij Patel, Meet Patel, Krish Patel — Team, Category 1 ·
 vatsunp11@gmail.com
 
 Solution model: **Hybrid — Model 1 (Camera Registry & GIS, mandatory) +
@@ -650,3 +650,83 @@ analytics (crowd, anomaly, tamper) at software-only marginal cost.
 - Official gateway rules honored by ingest: [INTEGRATION_NOTES.md](INTEGRATION_NOTES.md)
   (see README for the rule-by-rule file mapping)
 - Deliverables status: [SUBMISSION_CHECKLIST.md](SUBMISSION_CHECKLIST.md)
+
+---
+
+## 13. Engineering updates & decisions (October 2026)
+
+Changes and design decisions made during the build hardening, recorded so the
+document matches the code as shipped.
+
+### 13.1 ANPR reader — RapidOCR + Indian plate-syntax gate
+
+The default plate reader was changed from `fast-plate-ocr` (`cct-xs-v1-global`)
+to **RapidOCR (PP-OCR via ONNX) with an Indian registration-syntax gate**. The
+previous model had a hard **9-character-slot** limit, so it could not emit a
+full 10-character Indian plate (a clean `GJ01AB1234` came back as `GJ01AB123`),
+and its small fixed-shape input mis-read district digits. On a 19-crop labelled
+evaluation of real sandbox plates (`docs/OCR_EVALUATION.md`), exact reads rose
+from **1/19 to 11/19** (13/19 recoverable by the confusion-tolerant matcher),
+with **zero reads invented** from the 25 non-plate crops. CPU-only; the detector
+falls back to the old reader if RapidOCR is absent. Residual one-character slips
+are handled by the existing three-layer safety net (displayed confidence,
+confusion-tolerant matcher, TrustTrace), never asserted as fact.
+
+### 13.2 TrustTrace — explainable evidence assessment
+
+A read-only `GET /api/vehicles/{plate}/assessment` endpoint and dashboard panel
+assemble the signals the platform already computes into one deterministic,
+explainable verdict: OCR confidence and spread, cross-read agreement, the
+fuzzy recoveries, route plausibility (including a **possible-cloned-plate**
+flag when one registration appears at two cameras too fast to be physical), and
+the hash-chained integrity status. It is an evidence-quality indicator for human
+verification, never a claim of identity or guilt; a single read is labelled a
+lead, not a fact.
+
+### 13.3 Datastore — SQLite → PostgreSQL, with a proven hot standby
+
+The app was already datastore-agnostic (env-driven `DATABASE_URL`, portable
+SQLAlchemy types). It now runs on **PostgreSQL**, and a single streaming
+read-replica was stood up and measured: after a 10,000-row burst, **replay lag
+~16 ms**, byte-lag 0, replica fully caught up. This is the §6.7 DR mechanism
+demonstrated, not asserted.
+
+### 13.4 Packaging — full stack containerized
+
+`docker compose up` brings up the whole platform (PostgreSQL, catalogue
+adapter, backend API, nginx-served frontend) one command, and the **real
+application** was verified running on the production topology (replicated
+primary + standby), not a separate demo build.
+
+### 13.5 Object storage — SeaweedFS (MinIO successor)
+
+MinIO was dropped: it has gated its Docker Hub and quay registries (the
+community-edition lockdown). The object-storage tier uses **SeaweedFS**, a
+freely-available, drop-in S3-compatible successor — the same client code works
+unchanged. Snapshot offload was benchmarked at **~345 objects/s**, fetch
+latency **p50 3.5 ms**, one node ≈ the state's ~32 M snapshots/day. Garage is a
+second option.
+
+### 13.6 Event bus — Kafka-API PoC
+
+A single-broker **Redpanda** (Kafka API) proof pushed **15,600 events/s** with
+true streaming latency **p50 1.7 ms / p99 6.2 ms** — one core ≈ 1.3 billion
+events/day, ~40× the statewide Tier-A event rate. Proves the §1 / §6 ingest
+fan-out tier has ample headroom.
+
+### 13.7 Hardware posture — CPU-first, GPUs optional (procurement flexibility)
+
+The ANPR pipeline runs **CPU-only** (demonstrated throughout). GPUs (§6.3) are
+an **optional accelerator for density, not a dependency** — so procurement can
+follow Make-in-India: commodity Indian-assembled servers, or the State Data
+Centre's GPU-as-a-service, with zero imported hardware if policy requires it.
+The §6.3 GPU sizing is a worked reference, not a bill of materials. Central
+storage holds snapshots + metadata (~150 TB), never video (continuous central
+video — ~52 PB/month — is explicitly rejected, §6.6).
+
+### 13.8 Production-component PoC
+
+Each production tier above is demonstrated at single-instance scale with the
+real app on it: `deploy/poc/` (compose + `k8s/` manifests with Deployments,
+Services, Ingress and an HPA + benchmark scripts). The roadmap is evidenced
+with running numbers, not diagrams.

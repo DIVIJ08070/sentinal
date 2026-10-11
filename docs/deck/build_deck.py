@@ -8,8 +8,10 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.ns import qn
 
-SHOTS = "/Users/mac/Desktop/sentinel-hackathon/docs/deck/shots"
-OUT = "/Users/mac/Desktop/sentinel-hackathon/deliverables/SENTINEL_Presentation.pptx"
+import os
+_HERE = os.path.dirname(os.path.abspath(__file__))
+SHOTS = os.path.join(_HERE, "shots")
+OUT = os.path.join(_HERE, "..", "..", "deliverables", "SENTINEL_Presentation.pptx")
 
 NAVY  = RGBColor(0x0B, 0x12, 0x20)
 CARD  = RGBColor(0x13, 0x1C, 0x31)
@@ -79,7 +81,7 @@ def para(tf, runs, size=12, color=BODY, bold=False, align=PP_ALIGN.LEFT,
 
 def footer(s, n):
     tf = box(s, 0.55, 7.08, 8.0, 0.3)
-    para(tf, "SENTINEL — Divij Patel (Individual, Category 1) — Gujarat Police CCTV Hackathon 2026", size=9, color=MUT, first=True)
+    para(tf, "SENTINEL — Divij Patel · Meet Patel · Krish Patel — Gujarat Police CCTV Hackathon 2026", size=9, color=MUT, first=True)
     tf2 = box(s, 11.6, 7.08, 1.18, 0.3)
     para(tf2, f"{n} / 12", size=9, color=MUT, align=PP_ALIGN.RIGHT, first=True)
 
@@ -148,7 +150,7 @@ para(tf, [("PROPOSED MODEL:  ", {"bold": True, "color": MUT}),
      size=12.5, first=True)
 tf = box(s, 0.75, 3.82, 11.8, 0.3)
 para(tf, [("SUBMITTED BY:  ", {"bold": True, "color": MUT}),
-          ("Divij Patel — Individual participant, Category 1  ·  vatsunp11@gmail.com", {"color": BODY})],
+          ("Divij Patel, Meet Patel, Krish Patel — Team, Category 1  ·  vatsunp11@gmail.com", {"color": BODY})],
      size=12.5, first=True)
 chip(s, 0.75, 4.24, 2.5, "30/30 government cameras live", color=GREEN, bold=True)
 chip(s, 3.4, 4.24, 2.9, "27 plate reads on real feeds today", color=AMBER, bold=True)
@@ -491,10 +493,10 @@ for i, (t, b) in enumerate(arts):
     para(tf, t, size=12.5, color=AMBER, bold=True, align=PP_ALIGN.CENTER, first=True)
     para(tf, b, size=9, color=BODY, align=PP_ALIGN.CENTER, space_before=3, line=1.0)
 tf = box(s, 1.2, 6.1, 10.9, 0.4)
-para(tf, "SENTINEL  ·  Hybrid Model 1 + 2/4  ·  Divij Patel (Individual, Category 1)  ·  Gujarat Police CCTV Hackathon 2026", size=12, color=MUT, align=PP_ALIGN.CENTER, first=True)
+para(tf, "SENTINEL  ·  Hybrid Model 1 + 2/4  ·  Divij Patel · Meet Patel · Krish Patel  ·  Gujarat Police CCTV Hackathon 2026", size=12, color=MUT, align=PP_ALIGN.CENTER, first=True)
 
 prs.core_properties.title = "SENTINEL — Gujarat Police CCTV Hackathon 2026 Submission Deck"
-prs.core_properties.author = "Divij Patel"
-prs.core_properties.subject = "Gujarat Police CCTV Hackathon 2026 — Category 1, Individual"
+prs.core_properties.author = "Divij Patel, Meet Patel, Krish Patel"
+prs.core_properties.subject = "Gujarat Police CCTV Hackathon 2026 — Category 1, Team (Divij Patel, Meet Patel, Krish Patel)"
 prs.save(OUT)
 print("saved", OUT, "slides:", len(prs.slides.__iter__.__self__._sldIdLst))
