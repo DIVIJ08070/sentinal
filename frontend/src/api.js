@@ -41,6 +41,10 @@ export const api = {
   cameras: (params) => request('/cameras', { params }),
   syncCameras: () => request('/cameras/sync', { method: 'POST' }),
   camerasGeojson: () => request('/cameras/geojson'),
+  // Registry metadata edit (type, ownership, maintenance...) - audited server-side.
+  patchCamera: (id, patch) => request(`/cameras/${id}`, { method: 'PATCH', body: patch }),
+  // Registry gap analysis: district-HQ coverage, ageing, maintenance, metadata gaps.
+  gapAnalysis: (params) => request('/registry/gap-analysis', { params }),
 
   // Stats
   stats: () => request('/stats'),
@@ -73,6 +77,25 @@ export const api = {
   // Camera health & bandwidth
   healthSummary: () => request('/health/summary'),
 };
+
+function withQuery(path, params = {}) {
+  const qs = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '' && value !== 'all') qs.set(key, value);
+  }
+  const encoded = qs.toString();
+  return `${API_BASE}${path}${encoded ? `?${encoded}` : ''}`;
+}
+
+// Registry export download (CSV re-imports via the bulk upload) and the
+// printable gap-analysis report - both plain links, opened by the browser.
+export function registryExportUrl(params = {}) {
+  return withQuery('/cameras/export', { format: 'csv', ...params });
+}
+
+export function gapReportUrl(params = {}) {
+  return withQuery('/registry/gap-analysis.html', params);
+}
 
 // URL of the evidence-dossier PDF for a plate (opened in a new tab — the
 // backend serves it inline with content-disposition; no body parsing needed).

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from './api.js';
+import { api, gapReportUrl, registryExportUrl } from './api.js';
 import MapView from './components/MapView.jsx';
 import StatsBar from './components/StatsBar.jsx';
 import AlertsPanel from './components/AlertsPanel.jsx';
@@ -53,6 +53,14 @@ function CamerasTab({ cameras, onSelect, onSync, syncing }) {
           {syncing ? 'Syncing…' : 'Sync'}
         </button>
       </div>
+      <div className="cam-actions">
+        <a className="btn btn-small" href={registryExportUrl()} download>
+          Export registry (CSV)
+        </a>
+        <a className="btn btn-small" href={gapReportUrl()} target="_blank" rel="noreferrer">
+          Gap-analysis report
+        </a>
+      </div>
 
       {cameras.length === 0 && (
         <div className="empty-state">
@@ -77,9 +85,15 @@ function CamerasTab({ cameras, onSelect, onSync, syncing }) {
             <div className="cam-name">{c.name}</div>
             <div className="cam-meta">
               {c.department || 'Unassigned'}
+              {c.camera_type ? ` · ${c.camera_type}` : ''}
               {c.lat == null || c.lon == null ? ' · no coordinates' : ''}
             </div>
           </div>
+          {c.maintenance_status && c.maintenance_status !== 'ok' && (
+            <span className={`maint-badge ${c.maintenance_status}`}>
+              {c.maintenance_status.replace('_', ' ')}
+            </span>
+          )}
           <span className="cam-codec">
             {(c.codec || '').toUpperCase()}
             {c.width && c.height ? ` ${c.width}x${c.height}` : ''}
@@ -217,6 +231,7 @@ export default function App() {
             <CameraDrawer
               camera={selectedCamera}
               onClose={() => setSelectedCameraId(null)}
+              onUpdated={loadCameras}
             />
           )}
         </div>

@@ -138,10 +138,64 @@ RESOLUTIONS = [(1920, 1080), (1280, 720), (2560, 1440), (704, 576), (640, 360)]
 FPS_CHOICES = [12, 15, 20, 25, 30]
 LIVE_RATIO = 0.9
 
+# Registry metadata (Model 1) - drawn from a SEPARATE seeded generator so the
+# original fields (departments, codecs, live flags...) and therefore the demo
+# journey stay byte-identical to earlier releases.
+METADATA_SEED = CATALOGUE_SEED + 1
+CAMERA_TYPES_BY_DEPARTMENT = {
+    "Home/Police": ["bullet", "ptz", "anpr", "dome"],
+    "GSRTC": ["dome", "bullet"],
+    "Municipal Corporation": ["bullet", "ptz", "dome"],
+    "Panchayat": ["bullet", "analog"],
+    "Health": ["dome"],
+    "RTO": ["anpr", "bullet"],
+    "Food & Civil Supplies": ["dome", "analog"],
+}
+OWNER_BY_DEPARTMENT = {
+    "Home/Police": "{city} City Police",
+    "GSRTC": "GSRTC {city} Division",
+    "Municipal Corporation": "{city} Municipal Corporation",
+    "Panchayat": "District Panchayat, {city}",
+    "Health": "Civil Hospital, {city}",
+    "RTO": "RTO {city}",
+    "Food & Civil Supplies": "FCS District Office, {city}",
+}
+STORAGE_BY_DEPARTMENT = {  # (storage type, retention days)
+    "Home/Police": ("NVR (local)", 30), "GSRTC": ("cloud VMS", 15),
+    "Municipal Corporation": ("central NVR", 30), "Panchayat": ("DVR (local)", 7),
+    "Health": ("NVR (local)", 15), "RTO": ("cloud VMS", 30),
+    "Food & Civil Supplies": ("DVR (local)", 7),
+}
+MAINTENANCE_CHOICES = ["ok", "due", "under_repair", "faulty"]
+MAINTENANCE_WEIGHTS = [72, 14, 6, 8]
+REFERENCE_DATE = (2026, 9, 1)  # fixed: the catalogue must not drift with the clock
+
+
+def _registry_metadata(rng: random.Random, department: str, city: str) -> dict:
+    from datetime import date, timedelta
+
+    ref = date(*REFERENCE_DATE)
+    installed = ref - timedelta(days=rng.randint(200, 365 * 9))  # 0.5 - 9 years old
+    amc_expiry = installed + timedelta(days=365 * rng.choice([3, 5, 7]))
+    storage, retention = STORAGE_BY_DEPARTMENT[department]
+    # ~1 in 10 records arrives incomplete, as real departmental sheets do.
+    incomplete = rng.random() < 0.1
+    return {
+        "camera_type": rng.choice(CAMERA_TYPES_BY_DEPARTMENT[department]),
+        "ownership": None if incomplete else OWNER_BY_DEPARTMENT[department].format(city=city),
+        "installed_on": None if incomplete else installed.isoformat(),
+        "amc_expiry": amc_expiry.isoformat(),
+        "maintenance_status": rng.choices(MAINTENANCE_CHOICES, weights=MAINTENANCE_WEIGHTS, k=1)[0],
+        "last_maintenance_on": (ref - timedelta(days=rng.randint(10, 400))).isoformat(),
+        "storage_type": storage,
+        "retention_days": retention,
+    }
+
 
 def _build_catalogue() -> list:
     """Build the ~50-camera catalogue deterministically (fixed seed)."""
     rng = random.Random(CATALOGUE_SEED)
+    meta_rng = random.Random(METADATA_SEED)
     cameras = []
     for city, code, landmarks in CITIES:
         for index, (landmark, lat, lon) in enumerate(landmarks, 1):
@@ -166,6 +220,7 @@ def _build_catalogue() -> list:
                     "hls": f"http://localhost:8888/stream/{camera_id}/index.m3u8",
                     "whep": f"http://localhost:8889/stream/{camera_id}/whep",
                 },
+                **_registry_metadata(meta_rng, department, city),
             })
     return cameras
 

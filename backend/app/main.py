@@ -7,14 +7,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from .db import Base, engine
-from .routers import alerts, audit_log, cameras, detections, dossier, health, routes, stats, watchlist
+from .db import Base, add_missing_columns, engine
+from .routers import (
+    alerts, audit_log, cameras, detections, dossier, health, registry, routes, stats, watchlist,
+)
 from .ws import manager
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    add_missing_columns()  # older databases gain new nullable columns
     yield
 
 
@@ -35,6 +38,7 @@ def create_app() -> FastAPI:
 
     for router in (
         cameras.router,
+        registry.router,
         watchlist.router,
         detections.router,
         alerts.router,
