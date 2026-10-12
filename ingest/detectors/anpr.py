@@ -103,6 +103,31 @@ _INDIAN_PLATE_RE = re.compile(r"^[A-Z]{2}\d{2}[A-Z]{1,3}\d{4}$")
 # Narrowest plate crop (px) that read correctly in the labelled set was 59 wide;
 # the 39-49 px crops were unreadable by every engine tried (docs/OCR_EVALUATION.md).
 _RAPID_MIN_PLATE_W = 56
+# Fallback pass for wide crops whose first-pass read failed (see _read_plate_rapid).
+_RAPID_FALLBACK_MIN_W = 100
+_RAPID_FALLBACK_MIN_SCORE = 0.90
+
+
+def _stretch_contrast(img):
+    """Grayscale percentile contrast stretch (2nd-98th): recovers blown-out IR /
+    headlight-bloom crops and very dark night crops. Never raises."""
+    try:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+        lo, hi = np.percentile(gray, 2), np.percentile(gray, 98)
+        stretched = np.clip((gray.astype(np.float32) - lo) / max(float(hi - lo), 1.0) * 255.0, 0, 255)
+        return cv2.cvtColor(stretched.astype(np.uint8), cv2.COLOR_GRAY2BGR)
+    except Exception:
+        return img
+
+
+def _pad_plate(img, fraction=0.3):
+    """Replicate-border margin around a plate crop so the text detector does not
+    clip the outer characters."""
+    h = img.shape[0]
+    py = max(2, int(h * fraction))
+    return cv2.copyMakeBorder(img, py, py, int(py * 1.5), int(py * 1.5), cv2.BORDER_REPLICATE)
+
+
 _DIGIT_AS_LETTER = {"0": "O", "1": "I", "5": "S", "8": "B", "6": "G", "2": "Z"}
 _LETTER_AS_DIGIT = {v: k for k, v in _DIGIT_AS_LETTER.items()}
 
@@ -137,23 +162,51 @@ def _repair_indian_plate(text: str) -> Optional[str]:
     return fixed if _INDIAN_PLATE_RE.match(fixed) else None
 
 
-def _rapid_reading_order(result) -> Tuple[str, Optional[float]]:
-    """Join RapidOCR line boxes in reading order (rows top->bottom, each row
-    left->right, so a two-line plate reads top then bottom). Returns
-    (text, mean line score)."""
-    if not result:
-        return "", None
+def _rapid_lines(result):
+    """RapidOCR output -> list of (cx, cy, height, x1, x2, cleaned_text, score)
+    for every line that has at least one A-Z/0-9 character."""
     items = []
-    for box, text, score in result:
+    for box, text, score in result or []:
         cleaned = re.sub(r"[^A-Z0-9]", "", str(text).upper())
         if cleaned:
+            xs = [pt[0] for pt in box]
             items.append((
                 (box[0][0] + box[2][0]) / 2.0, (box[0][1] + box[2][1]) / 2.0,
-                abs(box[2][1] - box[0][1]), cleaned, float(score),
+                abs(box[2][1] - box[0][1]), min(xs), max(xs), cleaned, float(score),
             ))
+    return items
+
+
+def _drop_duplicate_lines(items):
+    """RapidOCR's detector sometimes returns overlapping boxes over the SAME text
+    (e.g. 'GJ' inside 'GJ01AB1234', or 'J01AB123' next to a '234' box that lies
+    on the plate's last digits). Joining them concatenates the overlap into
+    junk that the plate gate then rejects, losing a read that was there. Keep a
+    line only if less than half of its width is covered by a better line on the
+    same row."""
+    ranked = sorted(items, key=lambda t: (t[6] * len(t[5])), reverse=True)
+    kept = []
+    for it in ranked:
+        width = max(it[4] - it[3], 1.0)
+        dup = False
+        for k in kept:
+            if abs(it[1] - k[1]) > 0.6 * max(it[2], k[2], 1.0):
+                continue  # different row
+            overlap = min(it[4], k[4]) - max(it[3], k[3])
+            if overlap > 0.5 * width:
+                dup = True
+                break
+        if not dup:
+            kept.append(it)
+    return kept
+
+
+def _join_reading_order(items):
+    """Join lines in reading order (rows top->bottom, each row left->right, so
+    a two-line plate reads top then bottom). Returns (text, mean score)."""
     if not items:
         return "", None
-    items.sort(key=lambda t: t[1])
+    items = sorted(items, key=lambda t: t[1])
     rows, current = [], [items[0]]
     for it in items[1:]:
         mean_y = sum(c[1] for c in current) / len(current)
@@ -164,7 +217,36 @@ def _rapid_reading_order(result) -> Tuple[str, Optional[float]]:
             current = [it]
     rows.append(current)
     ordered = [t for row in rows for t in sorted(row, key=lambda t: t[0])]
-    return "".join(t[3] for t in ordered), sum(t[4] for t in ordered) / len(ordered)
+    return "".join(t[5] for t in ordered), sum(t[6] for t in ordered) / len(ordered)
+
+
+def _rapid_reading_order(result) -> Tuple[str, Optional[float]]:
+    """Join RapidOCR line boxes in reading order. Returns (text, mean score).
+    Overlapping duplicate boxes over the same text are dropped first."""
+    items = _drop_duplicate_lines(_rapid_lines(result))
+    return _join_reading_order(items)
+
+
+def _plate_from_rapid(result) -> Tuple[Optional[str], Optional[float]]:
+    """Best valid Indian plate in a RapidOCR result, or (None, None).
+
+    First the de-duplicated lines joined in reading order (the normal case).
+    If that is not a valid plate, each single line is tried on its own: the
+    detector often boxes the whole plate AND stray fragments, and a lone line
+    that already fits the syntax is a safer read than a mangled join. The
+    syntax gate still decides - nothing invalid is ever accepted."""
+    items = _drop_duplicate_lines(_rapid_lines(result))
+    text, score = _join_reading_order(items)
+    plate = _repair_indian_plate(text)
+    if plate is not None:
+        return plate, score
+    best = (None, None)
+    for it in sorted(items, key=lambda t: t[6], reverse=True):
+        plate = _repair_indian_plate(it[5])
+        if plate is not None:
+            best = (plate, it[6])
+            break
+    return best
 
 
 def _plate_label(plate: str, confidence: Optional[float]) -> str:
@@ -586,30 +668,57 @@ class AnprDetector(Detector):
         AA00A(AA)0000 or becomes so after a positional letter<->digit repair;
         anything else (caption text, half-read plates) is rejected rather than
         trusted. Confidence is RapidOCR's mean line score. Never raises.
+
+        If both fail on a reasonably wide crop (>= _RAPID_FALLBACK_MIN_W px) a
+        fallback runs on a PADDED, contrast-stretched copy: RapidOCR's text
+        detector tends to clip the first/last characters of a plate that fills
+        its whole crop (padding gives it a margin), and night/IR footage is
+        blown out or very dark (a percentile contrast stretch recovers it).
+        Fallback reads are held to a stricter bar than the first pass: both
+        views must agree, or the read must be very confident.
         """
         h, w = region.shape[:2]
         if w < _RAPID_MIN_PLATE_W:
             return None, None  # too few pixels for any engine; saves ~0.7 s of CPU
         views = [region]
         if 0 < h < 96:
-            scale = 96.0 / h
-            views.append(cv2.resize(
-                region, (max(1, int(region.shape[1] * scale)), 96),
-                interpolation=cv2.INTER_CUBIC,
-            ))
+            views.append(self._rapid_upscale(region))
         for view in views:
-            try:
-                result, _ = self._rapid(view)
-            except Exception:
-                continue
-            text, score = _rapid_reading_order(result)
-            plate = _repair_indian_plate(text)
-            if plate is None:
-                continue
-            if score is not None and score < self.min_plate_confidence:
-                continue
-            return plate, score
+            plate, score = self._rapid_read_view(view)
+            if plate is not None:
+                return plate, score
+        if w < _RAPID_FALLBACK_MIN_W:
+            return None, None
+        for base in (_pad_plate(_stretch_contrast(region)), _pad_plate(region)):
+            first = self._rapid_read_view(base)
+            second = self._rapid_read_view(self._rapid_upscale(base)) if base.shape[0] < 96 else (None, None)
+            if first[0] is not None and first[0] == second[0]:
+                return first
+            for plate, score in (first, second):
+                if plate is not None and score is not None and score >= _RAPID_FALLBACK_MIN_SCORE:
+                    return plate, score
         return None, None
+
+    @staticmethod
+    def _rapid_upscale(region):
+        h = region.shape[0]
+        scale = 96.0 / max(h, 1)
+        return cv2.resize(
+            region, (max(1, int(region.shape[1] * scale)), 96),
+            interpolation=cv2.INTER_CUBIC,
+        )
+
+    def _rapid_read_view(self, view) -> Tuple[Optional[str], Optional[float]]:
+        try:
+            result, _ = self._rapid(view)
+        except Exception:
+            return None, None
+        plate, score = _plate_from_rapid(result)
+        if plate is None:
+            return None, None
+        if score is not None and score < self.min_plate_confidence:
+            return None, None
+        return plate, score
 
     def _save_crop(self, region, plate, confidence) -> None:
         """Evaluation capture (see SENTINEL_SAVE_CROPS). Never raises."""

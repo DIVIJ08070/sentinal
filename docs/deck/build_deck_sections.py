@@ -138,7 +138,7 @@ para(box(s, 0.9, 6.1, 11.5, 0.4),
 s = slide("What it does", "Type a registration number, get a court-ready answer",
           "One platform: register · view · detect · correlate · trace · prove.")
 beats = [
-    ("1 · REGISTER & VIEW", "Catalogue-driven registry + GIS map of every department's cameras; live viewing of heterogeneous feeds — nothing hard-coded, nothing replaced."),
+    ("1 · REGISTER & VIEW", "Catalogue-driven registry + GIS map of every department's cameras — metadata, health, CSV import/export, and a gap analysis that flags coverage blind-spots. Live viewing of heterogeneous feeds; nothing hard-coded, nothing replaced."),
     ("2 · DETECT (ANPR)", "CPU-only vehicle detection + plate reading on the live feed, every read PTS-timestamped with a displayed confidence."),
     ("3 · CORRELATE & ALERT", "Each read checked against the watchlist; a match fires a real-time alert in under a second with the camera's own frame."),
     ("4 · TRACE THE ROUTE", "Search a plate → the timestamped, camera-by-camera route on the GIS map, with a physics filter rejecting impossible hops."),
@@ -154,8 +154,8 @@ for i, (t, d) in enumerate(beats):
 # ===================================================== 3 — PROBLEMS SOLVED
 s = slide("Problems solved", "The control-room pain, and how SENTINEL answers it")
 probs = [
-    ("Fragmented CCTV across 26 departments", "One catalogue-driven registry + GIS; integrate, don't rip-and-replace."),
-    ("Incompatible vendors, codecs, resolutions", "Per-camera properties from the catalogue; mixed H.264/H.265 handled; adapter pattern."),
+    ("Fragmented, incompatible CCTV (26 depts)", "One catalogue-driven registry + GIS; integrate don't replace; mixed H.264/H.265 and vendors handled per-camera."),
+    ("No view of where coverage is missing", "A gap analysis flags districts and areas with inadequate CCTV — with an exportable report for planning."),
     ("Days of manual footage scrubbing", "Plate in → timestamped multi-camera route out in seconds."),
     ("OCR misreads on real CCTV plates", "RapidOCR + a deterministic grammar-aware arbiter (“the king”) + confidence + TrustTrace."),
     ("Evidence that dies before court", "SHA-256 hash-chained dossier; snapshots bound by hash; operator identity on every record."),
@@ -176,8 +176,8 @@ card(s, 0.55, 1.85, 3.95, 2.35, "Frontend", [
     "React 18 + Vite", "Leaflet GIS map", "HLS video (hls.js)", "Real-time alerts over WebSocket"])
 card(s, 4.7, 1.85, 3.95, 2.35, "Backend", [
     "Python 3.12 · FastAPI", "SQLAlchemy ORM", "WebSockets (live alerts)", "fpdf2 (evidence dossier)"])
-card(s, 8.85, 1.85, 3.95, 2.35, "Data", [
-    "PostgreSQL + PostGIS (prod)", "SQLite (dev) — DB-agnostic", "Hash-chained audit log", "SHA-256 chain-of-custody"])
+card(s, 8.85, 1.85, 3.95, 2.35, "Data & registry", [
+    "PostgreSQL + PostGIS (prod)", "Camera registry + gap analysis", "CSV import/export · dept scope", "Hash-chained audit · SHA-256 dossier"])
 card(s, 0.55, 4.35, 3.95, 2.45, "AI / ANPR (CPU)", [
     "YOLOv8n vehicle detection", "Plate localizer (ONNX)", "RapidOCR + Indian syntax gate", "“The king” — deterministic", "   grammar-aware arbiter"], title_color=GREEN)
 card(s, 4.7, 4.35, 3.95, 2.45, "Streaming", [
@@ -200,19 +200,19 @@ card(s, 0.55, 4.65, 6.0, 2.1, "Evidence & trust (built)", [
     "SHA-256 chain-of-custody dossier, snapshots bound by hash",
     "TrustTrace: confidence, cross-read agreement, cloned-plate flag",
     "Physics filter rejects impossible hops with a plain reason"], title_color=GREEN)
-card(s, 6.75, 4.65, 6.05, 2.1, "Scale arithmetic (computed)", [
-    "Video stays at the edge: ~1–3 Kbps metadata/camera upstream",
-    "160 Gbps of video → ~80–240 Mbps of events statewide",
+card(s, 6.75, 4.65, 6.05, 2.1, "Registry & scale (computed)", [
+    "Gap analysis: 30 cameras mapped across 7 of 33 districts",
+    "Edge-first: 160 Gbps video → ~80–240 Mbps events statewide",
     "150 TB of snapshots vs ~52 PB/month of video (rejected)",
-    "12 backend tests passing; full Docker stack on PostgreSQL"], title_color=AMBER)
+    "18 backend tests passing; full Docker stack on PostgreSQL"], title_color=AMBER)
 
 # ===================================================== 6 — WHAT WE ACHIEVED
 s = slide("What we achieved", "A working, honest, production-shaped platform")
 card(s, 0.55, 1.85, 6.0, 2.3, "Complete & verified", [
     "Every mandatory module built and running on live feeds",
-    "Registry · GIS · viewing · ANPR · watchlist · alerts",
-    "Route reconstruction + physics filter + dossier",
-    "12 backend tests pass; clean-clone quickstart"], title_color=GREEN)
+    "Model 1 registry: metadata · gap analysis · CSV · dept scope",
+    "ANPR · watchlist · alerts · route + physics · dossier",
+    "18 backend tests pass; clean-clone quickstart"], title_color=GREEN)
 card(s, 6.75, 1.85, 6.05, 2.3, "Evidence-first, by design", [
     "Never asserts a read as fact — confidence on everything",
     "Confusion-tolerant matcher recovers OCR misreads",

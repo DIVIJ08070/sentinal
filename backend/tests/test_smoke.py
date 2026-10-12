@@ -418,3 +418,47 @@ def test_route_separates_live_from_simulated(client, journey):
     assert sha256_hex(canonical_json(payload)) == row["row_hash"]
     pdf = client.get(f"/api/vehicles/{plate}/dossier.pdf", params={"include_simulated": True})
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+
+
+def test_watchlist_import_and_export(client):
+    # Test CSV, TXT, JSON export
+    csv_res = client.get("/api/watchlist/export?format=csv")
+    assert csv_res.status_code == 200
+    assert "plate,label,category,priority" in csv_res.text
+    assert "attachment; filename=\"watchlist_export.csv\"" in csv_res.headers.get("content-disposition", "")
+
+    txt_res = client.get("/api/watchlist/export?format=txt")
+    assert txt_res.status_code == 200
+    assert "attachment; filename=\"watchlist_plates.txt\"" in txt_res.headers.get("content-disposition", "")
+
+    json_res = client.get("/api/watchlist/export?format=json")
+    assert json_res.status_code == 200
+    assert isinstance(json_res.json(), list)
+
+    # Test bulk import via raw text
+    import_res = client.post(
+        "/api/watchlist/import",
+        json={
+            "raw_text": "GJ88AA1234\nGJ88BB5678\nGJ88AA1234",
+            "default_label": "Import test",
+            "default_category": "wanted",
+            "default_priority": "high",
+            "skip_duplicates": True,
+        },
+    )
+    assert import_res.status_code == 200
+    data = import_res.json()
+    assert data["imported"] == 2
+    assert data["skipped"] == 1
+    assert "GJ88AA1234" in data["plates_imported"]
+    assert "GJ88BB5678" in data["plates_imported"]
+
+    # Verify exported TXT now includes imported plate
+    txt_after = client.get("/api/watchlist/export?format=txt").text
+    assert "GJ88AA1234" in txt_after
+
+    # Cleanup created entries
+    wl = client.get("/api/watchlist").json()
+    for e in wl:
+        if e["plate"] in ("GJ88AA1234", "GJ88BB5678"):
+            client.delete(f"/api/watchlist/{e['id']}")

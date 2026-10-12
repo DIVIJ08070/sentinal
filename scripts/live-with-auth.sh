@@ -30,10 +30,15 @@ DEMO_CAMS="${DEMO_CAMS:-$PRESET_CAMS}"
 INTERVAL_MS="${INTERVAL_MS:-$PRESET_INTERVAL}"
 echo "• mode: $MODE — cameras $DEMO_CAMS, analysis interval ${INTERVAL_MS} ms"
 
-EMAIL="${GRID_EMAIL:-}"
-[ -z "$EMAIL" ] && read -r -p "Registered email: " EMAIL
-read -r -s -p "Access password for $EMAIL (not echoed): " PASS; echo
-export GRID_RTSP_AUTH="$EMAIL:$PASS"; unset PASS
+if [ -z "${GRID_RTSP_AUTH:-}" ]; then
+  EMAIL="${GRID_EMAIL:-}"
+  [ -z "$EMAIL" ] && read -r -p "Registered email: " EMAIL
+  PASS="${GRID_PASSWORD:-${GRID_PASS:-}}"
+  if [ -z "$PASS" ]; then
+    read -r -s -p "Access password for $EMAIL (not echoed): " PASS; echo
+  fi
+  export GRID_RTSP_AUTH="$EMAIL:$PASS"; unset PASS
+fi
 
 # Verify against the gateway before starting anything (URL form per the
 # integrator guide: email with @ encoded as %40). Output is discarded so the

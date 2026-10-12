@@ -163,6 +163,26 @@ class WatchlistOut(BaseModel):
     created_at: UTCDateTime
 
 
+class WatchlistBulkImportItem(BaseModel):
+    plate: str = Field(min_length=1)
+    label: Optional[str] = None
+    category: Optional[Category] = "stolen"
+    priority: Optional[Priority] = "high"
+    active: Optional[bool] = True
+    notes: Optional[str] = None
+
+
+class WatchlistBulkImportIn(BaseModel):
+    items: list[WatchlistBulkImportItem] = Field(default_factory=list)
+    raw_text: Optional[str] = None
+    default_label: Optional[str] = "Bulk imported"
+    default_category: Optional[Category] = "stolen"
+    default_priority: Optional[Priority] = "high"
+    default_active: Optional[bool] = True
+    skip_duplicates: bool = True
+    rescan: bool = False
+
+
 # ---------------------------------------------------------------------------
 # Detections
 # ---------------------------------------------------------------------------

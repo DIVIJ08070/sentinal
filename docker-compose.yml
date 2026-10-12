@@ -20,7 +20,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentinel}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentinel}" ]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -49,7 +49,7 @@ services:
       # backend; the dashboard reaches the backend inside Docker, not via this).
       - "8001:8000"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/stats"]
+      test: [ "CMD", "curl", "-fsS", "http://localhost:8000/api/stats" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -65,8 +65,8 @@ services:
   # --- live analytics (profile: live) — needs GRID_RTSP_AUTH ---
   relay:
     build: .
-    profiles: ["live"]
-    command: python ingest/hls_relay.py --cams cam01,cam06,cam16,cam23,cam27 --port 8888
+    profiles: [ "live" ]
+    command: python ingest/hls_relay.py --cams cam01,cam02,cam03,cam05 --reencode --port 8888
     environment:
       GRID_RTSP_AUTH: ${GRID_RTSP_AUTH:-}
     ports:
@@ -76,7 +76,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    profiles: ["live"]
+    profiles: [ "live" ]
     depends_on:
       backend:
         condition: service_healthy

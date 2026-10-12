@@ -29,7 +29,16 @@ INTERVAL_MS="${INTERVAL_MS:-300}"
 AI_VIEW_PORT="${AI_VIEW_PORT:-8892}"
 PY="$ROOT/.venv/bin/python"
 
-for u in "$BACKEND/api/stats" "http://localhost:5173/"; do
+FRONTEND="${FRONTEND_URL:-}"
+if [ -z "$FRONTEND" ]; then
+  if curl -sf -m 1 -o /dev/null "http://localhost:8080/"; then
+    FRONTEND="http://localhost:8080/"
+  else
+    FRONTEND="http://localhost:5173/"
+  fi
+fi
+
+for u in "$BACKEND/api/stats" "$FRONTEND"; do
   curl -sf -m 3 -o /dev/null "$u" || { echo "✗ not running: $u — start the stack first (README: How to run)"; exit 1; }
 done
 echo "✓ stack up"

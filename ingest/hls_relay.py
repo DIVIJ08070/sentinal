@@ -42,13 +42,14 @@ MANIFEST_WAIT_S = 12.0
 
 
 class RelayManager:
-    def __init__(self, host, out_root, standing, codecs, max_pullers, idle_timeout):
+    def __init__(self, host, out_root, standing, codecs, max_pullers, idle_timeout, reencode=False):
         self.host = host
         self.out_root = out_root
         self.codecs = codecs                  # cam id -> codec string
         self.standing = set(standing)
         self.max_pullers = max_pullers
         self.idle_timeout = idle_timeout
+        self.reencode = reencode
         self.lock = threading.Lock()
         # cam -> {proc, last_access (monotonic), standing, backoff}
         self.pullers = {}
@@ -60,35 +61,39 @@ class RelayManager:
         return cam in self.codecs
 
     def _spawn(self, cam, fresh=True):
+        if cam in self.pullers and self.pullers[cam]["proc"].poll() is None:
+            try:
+                self.pullers[cam]["proc"].kill()
+                self.pullers[cam]["proc"].wait(timeout=1.0)
+            except Exception:
+                pass
         out_dir = os.path.join(self.out_root, cam)
         if fresh:
             shutil.rmtree(out_dir, ignore_errors=True)
-        # On a respawn the old playlist/segments are KEPT: with append_list the
-        # new ffmpeg continues the same playlist (marked by a discontinuity), so
-        # a connected player rides over the gateway restarting its looping feed
-        # instead of losing the manifest and buffering.
         os.makedirs(out_dir, exist_ok=True)
         codec = (self.codecs.get(cam) or "h264").lower()
-        if codec in ("hevc", "h265"):
-            # Chrome cannot decode HEVC: transcode to H.264/720p on demand.
-            video_args = ["-c:v", "libx264", "-preset", "veryfast",
-                          "-tune", "zerolatency", "-vf", "scale=-2:720"]
+        transcode = codec in ("hevc", "h265") or self.reencode
+        if transcode:
+            video_args = ["-c:v", "libx264", "-preset", "ultrafast",
+                          "-tune", "zerolatency", "-vf", "scale=-2:720,fps=10",
+                          "-pix_fmt", "yuv420p",
+                          "-force_key_frames", "expr:gte(t,n_forced*2)",
+                          "-sc_threshold", "0"]
         else:
             video_args = ["-c", "copy"]
         cmd = ["ffmpeg", "-nostdin", "-v", "error",
                "-rtsp_transport", "tcp", "-timeout", "8000000",
-               # RTP packet loss: drop the incomplete frame instead of letting
-               # the player paint grey concealment smears (freeze > smear).
-               "-fflags", "+discardcorrupt",
+               "-flags", "low_delay",
+               "-fflags", "+discardcorrupt+nobuffer",
                "-i", with_rtsp_auth(f"rtsp://{self.host}:8554/stream/{cam}"),
                *video_args, "-an",
                "-f", "hls", "-hls_time", "2", "-hls_list_size", "6",
-               "-hls_flags", "delete_segments+append_list+omit_endlist+discont_start",
+               "-hls_flags", "delete_segments+append_list+omit_endlist+discont_start+temp_file",
                os.path.join(out_dir, "index.m3u8")]
         log = open(os.path.join(out_dir, "ffmpeg.log"), "w")
         proc = subprocess.Popen(cmd, stdout=log, stderr=log)
         print(f"hls_relay: puller up for {cam} ({codec}"
-              f"{', transcode' if codec in ('hevc', 'h265') else ', copy'})",
+              f"{', transcode' if transcode else ', copy'})",
               file=sys.stderr)
         return proc
 
@@ -96,12 +101,6 @@ class RelayManager:
         return sum(1 for p in self.pullers.values() if p["proc"].poll() is None)
 
     def _evict_idle(self):
-        """Kill the longest-idle alive on-demand puller. Returns True if evicted.
-
-        Pullers accessed in the last 30 s are considered actively watched and
-        are never evicted — better to refuse a new stream (503, client retries)
-        than to yank one out from under a viewer mid-startup.
-        """
         now = time.monotonic()
         candidates = [(cam, p) for cam, p in self.pullers.items()
                       if not p["standing"] and p["proc"].poll() is None
@@ -120,7 +119,7 @@ class RelayManager:
         if proc.poll() is None:
             proc.terminate()
             try:
-                proc.wait(timeout=5)
+                proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 proc.kill()
         shutil.rmtree(os.path.join(self.out_root, cam), ignore_errors=True)
@@ -135,50 +134,53 @@ class RelayManager:
             if p:
                 p["last_access"] = time.monotonic()
 
-    def ensure(self, cam):
-        """Make sure a puller runs for cam; wait until its manifest exists."""
-        if not self.known(cam):
+    def is_cam_healthy(self, cam):
+        cam_dir = os.path.join(self.out_root, cam)
+        m = os.path.join(cam_dir, "index.m3u8")
+        if not (os.path.exists(m) and os.path.getsize(m) > 0):
             return False
+        try:
+            ts_files = [f for f in os.listdir(cam_dir) if f.endswith(".ts")]
+            if not ts_files:
+                return False
+            latest_ts = max(ts_files, key=lambda f: os.path.getmtime(os.path.join(cam_dir, f)))
+            return os.path.getsize(os.path.join(cam_dir, latest_ts)) > 1000
+        except Exception:
+            return False
+
+    def ensure_async(self, cam):
+        """Make sure a puller runs for cam without blocking the caller."""
+        if not self.known(cam):
+            return
         with self.lock:
             p = self.pullers.get(cam)
-            if p and p["proc"].poll() is None:
+            if p:
                 p["last_access"] = time.monotonic()
-            else:
-                while self._alive_count() >= self.max_pullers:
-                    if not self._evict_idle():
-                        return False  # cap reached, nothing evictable
-                self.pullers[cam] = {
-                    "proc": self._spawn(cam, fresh=p is None),
-                    "last_access": time.monotonic(),
-                    "standing": cam in self.standing,
-                    "backoff": 2.0,
-                    "started": time.monotonic(),
-                    "respawn_at": None,
-                }
+                return
+            while self._alive_count() >= self.max_pullers:
+                if not self._evict_idle():
+                    return
+            self.pullers[cam] = {
+                "proc": self._spawn(cam, fresh=True),
+                "last_access": time.monotonic(),
+                "standing": cam in self.standing,
+                "backoff": 1.0,
+                "started": time.monotonic(),
+                "respawn_at": None,
+            }
+
+    def ensure(self, cam):
+        """Make sure a puller runs for cam; wait until its manifest exists."""
+        self.ensure_async(cam)
         manifest = os.path.join(self.out_root, cam, "index.m3u8")
-        # Answer fast: grid RTSP handshakes can take 10-20s+, far beyond what
-        # browser players wait on one request. A quick 503 + Retry-After lets
-        # hls.js poll every couple of seconds until the manifest exists (the
-        # frontend's manifestLoadPolicy is configured to retry patiently).
-        deadline = time.monotonic() + 4.0
+        deadline = time.monotonic() + 10.0
         while time.monotonic() < deadline and not self.stopping.is_set():
             if os.path.exists(manifest) and os.path.getsize(manifest) > 0:
                 return True
-            time.sleep(0.25)
+            time.sleep(0.2)
         return os.path.exists(manifest)
 
     def supervise(self):
-        """Respawn standing/watched pullers; reap idle on-demand ones.
-
-        The lock is held only for quick bookkeeping, never while waiting out a
-        restart delay: every browser request needs the same lock (ensure() /
-        touch()), so sleeping under it froze the whole relay for up to 30 s per
-        restarting camera.
-
-        A clean exit (rc=0) after a stable run is the gateway ending the
-        session as its looping feed restarts, so reconnect after ~1 s. Quick
-        exits and failures back off exponentially (2 s -> 30 s).
-        """
         while not self.stopping.wait(1.0):
             now = time.monotonic()
             with self.lock:
@@ -191,10 +193,8 @@ class RelayManager:
                         if not p["standing"] and idle > self.idle_timeout:
                             self._kill(cam, f"idle {idle:.0f}s")
                         elif now - p["started"] > 10.0:
-                            p["backoff"] = 2.0  # stable run: forget past failures
+                            p["backoff"] = 1.0  # stable run: forget past failures
                         continue
-                    # Dead: respawn standing pullers always, on-demand ones only
-                    # while someone is actually watching (recent access).
                     if not (p["standing"] or idle < 15.0):
                         self._kill(cam, "exited while unwatched")
                         continue
@@ -202,7 +202,7 @@ class RelayManager:
                         clean = p["proc"].returncode == 0 and now - p["started"] >= 10.0
                         wait = 1.0 if clean else p["backoff"]
                         if not clean:
-                            p["backoff"] = min(wait * 2.0, 30.0)
+                            p["backoff"] = min(wait * 1.5, 10.0)
                         p["respawn_at"] = now + wait
                         print(f"hls_relay: {cam} puller exited "
                               f"(rc={p['proc'].returncode}); respawn in {wait:.0f}s",
@@ -240,13 +240,19 @@ class CorsHandler(SimpleHTTPRequestHandler):
                 self.send_error(404, "unknown camera")
                 return
             if self.path.endswith("index.m3u8"):
-                if not self.manager.ensure(cam):
-                    self.send_response(503)
-                    self.send_header("Retry-After", "3")
-                    self.end_headers()
-                    return
+                self.manager.ensure(cam)
+                self.manager.touch(cam)
             else:
                 self.manager.touch(cam)
+                filepath = os.path.join(self.manager.out_root, cam, os.path.basename(self.path))
+                if filepath.endswith(".ts") and os.path.exists(filepath):
+                    for _ in range(5):
+                        if os.path.getsize(filepath) > 0:
+                            break
+                        time.sleep(0.1)
+                    if os.path.getsize(filepath) == 0:
+                        self.send_error(404, "segment not ready")
+                        return
         super().do_GET()
 
     def log_message(self, fmt, *args):
@@ -274,6 +280,8 @@ def main():
     ap.add_argument("--host", default=os.environ.get("GRID_HOST", DEFAULT_HOST))
     ap.add_argument("--port", type=int, default=8888)
     ap.add_argument("--dir", default=os.path.join(os.path.dirname(__file__), ".hls_relay"))
+    ap.add_argument("--reencode", action="store_true",
+                    help="re-encode H.264 cameras too (steady 2 s segments)")
     ap.add_argument("--max-pullers", type=int, default=10,
                     help="max simultaneous grid connections (pacing cap)")
     ap.add_argument("--idle-timeout", type=float, default=90.0,
@@ -294,7 +302,7 @@ def main():
     os.makedirs(args.dir, exist_ok=True)
 
     mgr = RelayManager(args.host, args.dir, standing, codecs,
-                       args.max_pullers, args.idle_timeout)
+                       args.max_pullers, args.idle_timeout, args.reencode)
     # Warm the standing pullers in the background — the HTTP server must
     # start listening immediately (ensure() blocks on manifest creation).
     threading.Thread(
@@ -315,7 +323,8 @@ def main():
     handler = functools.partial(CorsHandler, directory=args.dir)
     handler.manager = mgr
     CorsHandler.manager = mgr
-    QuietServer(("127.0.0.1", args.port), handler).serve_forever()
+    bind_addr = os.environ.get("HLS_RELAY_BIND", "0.0.0.0")
+    QuietServer((bind_addr, args.port), handler).serve_forever()
 
 
 if __name__ == "__main__":

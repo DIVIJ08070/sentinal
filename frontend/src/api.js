@@ -56,6 +56,8 @@ export const api = {
   // Watchlist
   watchlist: () => request('/watchlist'),
   addWatchlistEntry: (entry) => request('/watchlist', { method: 'POST', body: entry }),
+  importWatchlist: (data) => request('/watchlist/import', { method: 'POST', body: data }),
+  exportWatchlistUrl: (format = 'csv') => `${API_BASE}/watchlist/export?format=${format}`,
   updateWatchlistEntry: (id, patch) => request(`/watchlist/${id}`, { method: 'PATCH', body: patch }),
   deleteWatchlistEntry: (id) => request(`/watchlist/${id}`, { method: 'DELETE' }),
   // Retroactive matching: raise alerts for recent sightings of watchlist plates.
@@ -129,6 +131,10 @@ export function aiViewKey(camera) {
 
 export function aiViewStreamUrl(key) {
   return `${AI_VIEW_BASE}/ai/${encodeURIComponent(key)}.mjpg`;
+}
+
+export function aiViewSnapshotUrl(key) {
+  return `${AI_VIEW_BASE}/ai/${encodeURIComponent(key)}.jpg`;
 }
 
 // Normalises whatever `GET {AI_VIEW_BASE}/ai` returns into a Set of camera

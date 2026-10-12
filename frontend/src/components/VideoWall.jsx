@@ -9,15 +9,20 @@ const TILE_COUNT = 4;
  */
 export default function VideoWall({ cameras, onClose }) {
   const candidates = useMemo(
-    () => cameras.filter((c) => c.hls_url && c.status === 'live'),
+    () => cameras.filter((c) => Boolean(c.hls_url)),
     [cameras]
   );
 
-  const [selection, setSelection] = useState(() =>
-    Array.from({ length: TILE_COUNT }, (_, i) =>
-      candidates[i] ? candidates[i].id : ''
-    )
-  );
+  const [selection, setSelection] = useState(() => {
+    const starIds = [6, 23, 27, 1];
+    const available = candidates.map((c) => c.id);
+    const chosen = starIds.filter((id) => available.includes(id));
+    for (const c of candidates) {
+      if (chosen.length >= TILE_COUNT) break;
+      if (!chosen.includes(c.id)) chosen.push(c.id);
+    }
+    return Array.from({ length: TILE_COUNT }, (_, i) => chosen[i] ?? '');
+  });
 
   const camById = useMemo(() => {
     const map = new Map();

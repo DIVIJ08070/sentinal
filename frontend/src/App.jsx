@@ -8,6 +8,7 @@ import RouteSearch from './components/RouteSearch.jsx';
 import CameraDrawer from './components/CameraDrawer.jsx';
 import VideoWall from './components/VideoWall.jsx';
 import HealthPanel from './components/HealthPanel.jsx';
+import LiveAnprStudio from './components/LiveAnprStudio.jsx';
 
 const TABS = [
   { id: 'alerts', label: 'Alerts' },
@@ -112,6 +113,7 @@ export default function App() {
   const [panTarget, setPanTarget] = useState(null);
   const [activeTab, setActiveTab] = useState(INITIAL_TAB);
   const [wallOpen, setWallOpen] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   const loadCameras = useCallback(async () => {
@@ -212,6 +214,13 @@ export default function App() {
           </h1>
         </div>
         <StatsBar stats={stats} />
+        <button
+          className="btn btn-primary anpr-studio-topbar-btn"
+          onClick={() => setStudioOpen(true)}
+          title="Open interactive Live Video ANPR Studio"
+        >
+          ⚡ Live Video ANPR
+        </button>
         <button className="btn btn-ghost" onClick={() => setWallOpen(true)}>
           Video Wall
         </button>
@@ -287,6 +296,14 @@ export default function App() {
       </div>
 
       {wallOpen && <VideoWall cameras={cameras} onClose={() => setWallOpen(false)} />}
+      {studioOpen && (
+        <LiveAnprStudio
+          onClose={() => setStudioOpen(false)}
+          onTraceRoute={(plate) => {
+            setActiveTab('route');
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -81,8 +81,8 @@ RTSP_FAILURES_BEFORE_HLS = 2
 
 # Rule 4: individual failed reads are tolerated; only a sustained run of
 # consecutive failures is treated as a lost stream.
-MAX_CONSECUTIVE_READ_FAILURES = 30
-READ_FAILURE_SLEEP_S = 0.1
+MAX_CONSECUTIVE_READ_FAILURES = 100
+READ_FAILURE_SLEEP_S = 0.2
 
 # Decoder-concealment gate. After a lost/corrupt packet, a mid-stream join or
 # a loop point, FFmpeg emits frames whose unreconstructable regions are filled
@@ -239,7 +239,10 @@ class CaptureLoop:
         is still retried as a secondary option.
         """
         candidates = []
-        prefer_hls = self._rtsp_open_failures >= RTSP_FAILURES_BEFORE_HLS and self.hls_url
+        prefer_hls = (
+            os.environ.get("INGEST_PREFER_HLS", "").lower() in ("1", "true", "yes")
+            or self._rtsp_open_failures >= RTSP_FAILURES_BEFORE_HLS
+        ) and bool(self.hls_url)
         if prefer_hls:
             candidates.append(("hls", self.hls_url))
         if self.rtsp_url:

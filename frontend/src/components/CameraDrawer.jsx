@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { AI_VIEW_BASE, aiViewKey, aiViewList, aiViewStreamUrl, api, formatLocal } from '../api.js';
+import {
+  AI_VIEW_BASE,
+  aiViewKey,
+  aiViewList,
+  aiViewStreamUrl,
+  aiViewSnapshotUrl,
+  api,
+  formatLocal,
+} from '../api.js';
 
 const MAINTENANCE_OPTIONS = [
   ['ok', 'OK'],
@@ -67,7 +75,7 @@ function MaintenanceEditor({ camera, onUpdated }) {
  * on Safari), destroys the instance on unmount/src change, and degrades to a
  * "stream unavailable" message on fatal errors. Also used by VideoWall.
  */
-export function HlsPlayer({ src }) {
+export function HlsPlayer({ src, camera }) {
   const videoRef = useRef(null);
   const [failed, setFailed] = useState(false);
   const [connecting, setConnecting] = useState(true);
@@ -78,15 +86,13 @@ export function HlsPlayer({ src }) {
     if (!src) return undefined;
     const video = videoRef.current;
     if (!video) return undefined;
-    const onPlaying = () => setConnecting(false);
-    video.addEventListener('playing', onPlaying);
+    const clearConnecting = () => setConnecting(false);
+    video.addEventListener('playing', clearConnecting);
+    video.addEventListener('timeupdate', clearConnecting);
+    video.addEventListener('loadeddata', clearConnecting);
+    video.addEventListener('canplay', clearConnecting);
 
     if (Hls.isSupported()) {
-      // On-demand relay streams spin up when first requested: the manifest can
-      // 503 for up to a minute while ffmpeg connects to the camera and waits
-      // for a keyframe. During a startup grace window we treat fatal errors as
-      // "not ready yet" — tear down and rebuild the hls instance — and only
-      // surface "unavailable" once the grace window has elapsed.
       const GRACE_MS = 90000;
       const startedAt = Date.now();
       let hls = null;
@@ -95,10 +101,10 @@ export function HlsPlayer({ src }) {
 
       const patient = {
         default: {
-          maxTimeToFirstByteMs: 20000,
-          maxLoadTimeMs: 40000,
-          timeoutRetry: { maxNumRetry: 6, retryDelayMs: 2000, maxRetryDelayMs: 5000 },
-          errorRetry: { maxNumRetry: 8, retryDelayMs: 2000, maxRetryDelayMs: 4000 },
+          maxTimeToFirstByteMs: 15000,
+          maxLoadTimeMs: 30000,
+          timeoutRetry: { maxNumRetry: 8, retryDelayMs: 1500, maxRetryDelayMs: 4000 },
+          errorRetry: { maxNumRetry: 10, retryDelayMs: 1500, maxRetryDelayMs: 3500 },
         },
       };
 
@@ -108,14 +114,29 @@ export function HlsPlayer({ src }) {
           liveDurationInfinity: true,
           manifestLoadPolicy: patient,
           playlistLoadPolicy: patient,
+          // live-camera tuning
+          liveSyncDurationCount: 2,
+          liveMaxLatencyDurationCount: 4,
+          maxLiveSyncPlaybackRate: 1.5,
+          maxBufferLength: 6,
+          maxMaxBufferLength: 10,
+          backBufferLength: 8,
+          nudgeMaxRetry: 6,
         });
+        hls.on(Hls.Events.FRAG_LOADED, clearConnecting);
+        hls.on(Hls.Events.FRAG_BUFFERED, clearConnecting);
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data || !data.fatal) return;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            try { hls.startLoad(); return; } catch (_e) {}
+          }
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            try { hls.recoverMediaError(); return; } catch (_e) {}
+          }
           if (Date.now() - startedAt < GRACE_MS) {
-            // Still warming up — rebuild and try again shortly.
             try { hls.destroy(); } catch (_e) { /* noop */ }
             hls = null;
-            retryTimer = setTimeout(build, 3000);
+            retryTimer = setTimeout(build, 1500);
           } else {
             setFailed(true);
             try { if (hls) hls.destroy(); } catch (_e) { /* noop */ }
@@ -123,18 +144,31 @@ export function HlsPlayer({ src }) {
           }
         });
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          // Autoplay attribute alone doesn't fire when the source attaches
-          // after mount; muted play() is allowed by browser autoplay policy.
           video.play().catch(() => {});
+          clearConnecting();
         });
         hls.loadSource(src);
         hls.attachMedia(video);
       };
       build();
 
+      const watchdog = setInterval(() => {
+        if (!hls || disposed) return;
+        const edge = hls.liveSyncPosition;
+        if (edge && !video.paused && edge - video.currentTime > 8) {
+          video.currentTime = edge;
+        } else if (video.paused && !video.ended && document.visibilityState === 'visible') {
+          video.play().catch(() => {});
+        }
+      }, 3000);
+
       return () => {
         disposed = true;
-        video.removeEventListener('playing', onPlaying);
+        clearInterval(watchdog);
+        video.removeEventListener('playing', clearConnecting);
+        video.removeEventListener('timeupdate', clearConnecting);
+        video.removeEventListener('loadeddata', clearConnecting);
+        video.removeEventListener('canplay', clearConnecting);
         if (retryTimer) clearTimeout(retryTimer);
         if (hls) { try { hls.destroy(); } catch (_e) { /* noop */ } }
       };
@@ -145,7 +179,10 @@ export function HlsPlayer({ src }) {
       video.addEventListener('error', onError);
       video.src = src;
       return () => {
-        video.removeEventListener('playing', onPlaying);
+        video.removeEventListener('playing', clearConnecting);
+        video.removeEventListener('timeupdate', clearConnecting);
+        video.removeEventListener('loadeddata', clearConnecting);
+        video.removeEventListener('canplay', clearConnecting);
         video.removeEventListener('error', onError);
         video.removeAttribute('src');
         video.load();
@@ -153,7 +190,12 @@ export function HlsPlayer({ src }) {
     }
 
     setFailed(true);
-    return () => video.removeEventListener('playing', onPlaying);
+    return () => {
+      video.removeEventListener('playing', clearConnecting);
+      video.removeEventListener('timeupdate', clearConnecting);
+      video.removeEventListener('loadeddata', clearConnecting);
+      video.removeEventListener('canplay', clearConnecting);
+    };
   }, [src]);
 
   if (!src) {
@@ -167,7 +209,7 @@ export function HlsPlayer({ src }) {
     return <div className="stream-fallback">Stream unavailable.</div>;
   }
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 240, background: '#000' }}>
       <video
         ref={videoRef}
         className="stream-video"
@@ -175,23 +217,32 @@ export function HlsPlayer({ src }) {
         muted
         playsInline
         controls
+        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
       />
       {connecting && (
         <div
-          className="stream-fallback"
           style={{
             position: 'absolute',
-            inset: 0,
-            display: 'flex',
+            top: 8,
+            right: 8,
+            zIndex: 4,
+            background: 'rgba(0, 0, 0, 0.75)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '4px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            color: '#fef08a',
+            display: 'inline-flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            textAlign: 'center',
+            gap: '6px',
             pointerEvents: 'none',
           }}
         >
-          Connecting to live camera…
-          <br />
-          first open can take up to a minute
+          <span
+            className="dot status-live"
+            style={{ width: 6, height: 6, animation: 'pulse 1s infinite' }}
+          />
+          <span>Connecting…</span>
         </div>
       )}
     </div>
@@ -377,7 +428,10 @@ function AiView({ camera, active }) {
  * `compact` = video-wall tile layout (fills its parent instead of 16:9 box).
  */
 export function StreamView({ camera, scope = 'drawer', compact = false }) {
-  const [mode, setMode] = useState(() => readStoredMode(scope));
+  const [mode, setMode] = useState(() => {
+    const stored = readStoredMode(scope);
+    return stored || 'live';
+  });
   const choose = (next) => {
     setMode(next);
     storeMode(scope, next);
@@ -413,7 +467,7 @@ export function StreamView({ camera, scope = 'drawer', compact = false }) {
         )}
       </div>
       <div className={compact ? 'stream-view-body' : 'stream-box'}>
-        {ai ? <AiView camera={camera} active={ai} /> : <HlsPlayer src={camera.hls_url} />}
+        {ai ? <AiView camera={camera} active={ai} /> : <HlsPlayer src={camera.hls_url} camera={camera} />}
       </div>
     </div>
   );
