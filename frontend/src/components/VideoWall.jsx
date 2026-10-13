@@ -1,11 +1,34 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { StreamView } from './CameraDrawer.jsx';
 
 const TILE_COUNT = 4;
+const DEFAULT_CAM_TARGETS = [
+  { ext: 'cam01', id: 1 },
+  { ext: 'cam02', id: 2 },
+  { ext: 'cam03', id: 3 },
+  { ext: 'cam05', id: 5 },
+];
+
+function pickDefaultCams(candidates) {
+  const chosen = [];
+  for (const target of DEFAULT_CAM_TARGETS) {
+    const match = candidates.find(
+      (c) => c.external_id === target.ext || c.id === target.id
+    );
+    if (match && !chosen.includes(match.id)) {
+      chosen.push(match.id);
+    }
+  }
+  for (const c of candidates) {
+    if (chosen.length >= TILE_COUNT) break;
+    if (!chosen.includes(c.id)) chosen.push(c.id);
+  }
+  return Array.from({ length: TILE_COUNT }, (_, i) => chosen[i] ?? '');
+}
 
 /**
- * 2x2 wall of live HLS previews. Defaults to the first four live cameras
- * that publish an HLS URL; each tile can be retargeted with its dropdown.
+ * 2x2 wall of live HLS previews. Defaults to cam 1, 2, 3 and 5; each tile
+ * can be retargeted with its dropdown.
  */
 export default function VideoWall({ cameras, onClose }) {
   const candidates = useMemo(
@@ -13,16 +36,13 @@ export default function VideoWall({ cameras, onClose }) {
     [cameras]
   );
 
-  const [selection, setSelection] = useState(() => {
-    const starIds = [6, 23, 27, 1];
-    const available = candidates.map((c) => c.id);
-    const chosen = starIds.filter((id) => available.includes(id));
-    for (const c of candidates) {
-      if (chosen.length >= TILE_COUNT) break;
-      if (!chosen.includes(c.id)) chosen.push(c.id);
+  const [selection, setSelection] = useState(() => pickDefaultCams(candidates));
+
+  useEffect(() => {
+    if (selection.every((id) => id === '') && candidates.length > 0) {
+      setSelection(pickDefaultCams(candidates));
     }
-    return Array.from({ length: TILE_COUNT }, (_, i) => chosen[i] ?? '');
-  });
+  }, [candidates, selection]);
 
   const camById = useMemo(() => {
     const map = new Map();
