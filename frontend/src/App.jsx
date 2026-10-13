@@ -214,13 +214,13 @@ export default function App() {
           </h1>
         </div>
         <StatsBar stats={stats} />
-        <button
+        {/* <button
           className="btn btn-primary anpr-studio-topbar-btn"
           onClick={() => setStudioOpen(true)}
           title="Open interactive Live Video ANPR Studio"
         >
           ⚡ Live Video ANPR
-        </button>
+        </button> */}
         <button className="btn btn-ghost" onClick={() => setWallOpen(true)}>
           Video Wall
         </button>
@@ -296,14 +296,14 @@ export default function App() {
       </div>
 
       {wallOpen && <VideoWall cameras={cameras} onClose={() => setWallOpen(false)} />}
-      {studioOpen && (
+      {/* {studioOpen && (
         <LiveAnprStudio
           onClose={() => setStudioOpen(false)}
           onTraceRoute={(plate) => {
             setActiveTab('route');
           }}
         />
-      )}
+      )} */}
     </div>
   );
 }
