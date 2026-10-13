@@ -63,5 +63,5 @@ else
   echo "▶ relay started (pid $RELAY, log /tmp/sentinel-relay.log)"
 fi
 
-AUTO_ARM="${AUTO_ARM:-3}" DEMO_CAMS="$DEMO_CAMS" INTERVAL_MS="$INTERVAL_MS" \
+BACKEND_URL="${BACKEND_URL:-http://localhost:8001}" AUTO_ARM="${AUTO_ARM:-0}" DEMO_CAMS="$DEMO_CAMS" INTERVAL_MS="$INTERVAL_MS" \
   AI_VIEW_PORT="${AI_VIEW_PORT:-8892}" "$ROOT/scripts/demo-live.sh"

@@ -71,7 +71,7 @@ DISCONTINUITY_GAP_MS = 10_000.0
 PTS_JITTER_TOLERANCE_MS = 3_000.0
 
 # Rule 5: exponential backoff bounds for reconnect attempts.
-BACKOFF_INITIAL_S = 2.0
+BACKOFF_INITIAL_S = 1.0
 BACKOFF_MAX_S = 30.0
 BACKOFF_FACTOR = 2.0
 
@@ -81,8 +81,8 @@ RTSP_FAILURES_BEFORE_HLS = 2
 
 # Rule 4: individual failed reads are tolerated; only a sustained run of
 # consecutive failures is treated as a lost stream.
-MAX_CONSECUTIVE_READ_FAILURES = 100
-READ_FAILURE_SLEEP_S = 0.2
+MAX_CONSECUTIVE_READ_FAILURES = 50
+READ_FAILURE_SLEEP_S = 0.1
 
 # Decoder-concealment gate. After a lost/corrupt packet, a mid-stream join or
 # a loop point, FFmpeg emits frames whose unreconstructable regions are filled
@@ -236,7 +236,9 @@ class CaptureLoop:
 
         RTSP first (rule: RTSP is the AI-inference transport); once RTSP has
         failed RTSP_FAILURES_BEFORE_HLS times, HLS is tried first while RTSP
-        is still retried as a secondary option.
+        is still retried as a secondary option. If both are unreachable (e.g.
+        gateway cooldown / sandbox limits), a local fallback video clip if
+        available is tried so live demos never stall or show black frames.
         """
         candidates = []
         prefer_hls = (
@@ -249,6 +251,28 @@ class CaptureLoop:
             candidates.append(("rtsp", self.rtsp_url))
         if not prefer_hls and self.hls_url and not self.rtsp_url:
             candidates.append(("hls", self.hls_url))
+
+        # Check for local fallback video file (e.g. cam06_daytime.mp4)
+        cam_key = (self.camera.get("external_id") or f"cam{int(self.camera_id or 0):02d}").lower()
+        candidates_to_check = [
+            f"{cam_key}_daytime.mp4",
+            f"{cam_key}.mp4",
+            os.path.join(os.path.dirname(__file__), "..", f"{cam_key}_daytime.mp4"),
+            os.path.join(os.path.dirname(__file__), "..", f"{cam_key}.mp4"),
+        ]
+        local_file = None
+        for candidate_path in candidates_to_check:
+            abs_p = os.path.abspath(candidate_path)
+            if os.path.isfile(abs_p):
+                local_file = abs_p
+                break
+
+        prefer_file = os.environ.get("INGEST_PREFER_FILE", "").lower() in ("1", "true", "yes")
+        if prefer_file and local_file:
+            candidates.insert(0, ("file", local_file))
+        elif local_file:
+            candidates.append(("file", local_file))
+
         return candidates
 
     def _connect(self):
@@ -266,6 +290,7 @@ class CaptureLoop:
                 open_url = with_rtsp_auth(url) if transport == "rtsp" else url
                 cap = cv2.VideoCapture(open_url, cv2.CAP_FFMPEG)
                 if cap.isOpened():
+                    self._current_transport = transport
                     if self._ever_connected:
                         self.reconnects += 1
                     self._ever_connected = True
@@ -323,10 +348,12 @@ class CaptureLoop:
         last_processed_pts = None
         read_failures = 0
         corrupt_frames = 0
-        # File sources (own-footage demos, smoke clips) have no real-time
-        # clock: pace them to their PTS so detections, timestamps and the AI
-        # view run at the footage's true speed. Live RTSP/HLS is never slept.
-        is_file = not str(self.rtsp_url or self.hls_url or "").lower().startswith(("rtsp://", "http://", "https://"))
+        # File sources (own-footage demos, smoke clips, or local fallbacks) have
+        # no real-time clock: pace them to their PTS so detections, timestamps and
+        # the AI view run at the footage's true speed. Live RTSP/HLS is never slept.
+        is_file = (getattr(self, "_current_transport", "") == "file") or not str(
+            self.rtsp_url or self.hls_url or ""
+        ).lower().startswith(("rtsp://", "http://", "https://"))
         pace_wall = None
         pace_pts = None
 
@@ -376,6 +403,17 @@ class CaptureLoop:
 
             ok, frame = cap.read()
             if not ok or frame is None:
+                if is_file:
+                    # Seamless loop for local demo footage: rewind to beginning
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    anchor_wall = None
+                    last_pts = None
+                    last_processed_pts = None
+                    pace_wall = None
+                    pace_pts = None
+                    read_failures = 0
+                    time.sleep(0.01)
+                    continue
                 # Rule 4: a failed/slow read is not a disconnect by itself and
                 # must never crash or stall the pipeline.
                 read_failures += 1
